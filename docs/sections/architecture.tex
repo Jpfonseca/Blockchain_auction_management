@@ -1,0 +1,28 @@
+\newpage
+\section{Architecture}
+The auction management system has three main entities, which interact with each other: the Client and the two Servers (management and repository).
+\subsection{Users}
+The users are all the people interested in using this system. 
+All users need to connect to a \textbf{Client} interface of the system in order to use it. Upon authenticating themselves (using Cartão de Cidadão), they will be free to use the system at will. 
+Each user has a set of actions available:
+\begin{itemize}
+    \item Create auctions
+    \item Create bids for auctions he has permission to bid
+    \item See the result of the auctions he has previously bid in
+\end{itemize}
+Each user will need to authenticate himself before the server by solving a simple challenge sent by each of the servers.
+
+\subsection{Client}
+The Client represents the interface where the users will connect to. They need to use it, in order to get authenticated by the servers and exchange messages with them. This means that on the connection to the Client, the user will need to provide credentials that further on will be used for authentication in the system. The public key of Cartão de Cidadão and the user's ID will be sent to the servers and stored by them.
+
+
+\subsection{Servers}
+The central part of the project. 
+There is a Manager server, whose main goal is to validate bids and a Repository server, which holds all information about the auctions in a Blockchain format.
+
+\begin{itemize}
+    \item The Client may send messages for both of these servers;
+    \item The bids are sent to the Repository, which sends a proof-of-work to the Client;
+    \item The Repository server sends bids to the Manager for validation;
+    \item The Client sends validations in the form of dynamic code to the Manager.
+\end{itemize}

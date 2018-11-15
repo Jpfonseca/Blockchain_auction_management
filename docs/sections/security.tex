@@ -1,0 +1,32 @@
+
+\newpage
+
+\section{Security Measures}
+
+\subsection{Message/receipts confidentiality and integrity}
+The content of the user's messages should be passed through a check-sum algorithm, to check the message integrity.
+The user's messages will also have to be confidential. This means that only the sender and the receiver must know what information they carry inside. The user's receipts must also be encrypted to hide its contents.
+
+Each client/server will have a pair of asymmetric keys used do encrypt messages (sent to each other) through hybrid ciphers, meaning that the message will have three parts (see Section \ref{sssec:num411}) This guarantees that messages between users are private and cannot be read by either the client, server or other eavesdropping entities
+
+\subsection{Client-Server trustfulness}
+When an Client communicates with a Server for the first time, this will send a message with a challenge, which will certify that the sender was the Server and not another entity, after being answered.
+
+\subsection{User-Server authentication}
+The User must be authenticated by the server before being able to send messages and access receipts. This means that the user must provide credentials to the server during the sign-up to be able to  be authenticated from that moment forward. This means also that the user should be provided the possibility of changing his Authentication credentials whenever he considers.
+The authentication takes place with the use of certificates and challenges between the client and server. %\ref{auth}.
+
+\subsection{Client-Server security}
+The communication between the Server and the Client should be "secure". This means that a message sent by the client should not be eavesdropped by someone trying to intercept the messages (Man-in-the-Middle).
+A Diffie-Hellman exchange will happen to create a shared secret between the two entities.
+
+\subsection{Citizen Card authentication}
+The best way for a user to certify to the server that he/she is himself/herself is by using a public key certificate. As the Cartão de Cidadão provides one for each user, it can be used for the authentication methods.
+
+A certificate for the authentication key is, then, obtained, and the card is also used for signing of receipts and messages with the user's private authentication key.
+
+\subsection{User-Server security}
+Trusting that the channel where the information flows is secure, there is also the need to make sure that a User only accesses the messages sent or received by himself, mainly receipts, thus avoiding the information inside them to be public knowledge. This can be achieved by encrypting the messages so that only the receiver and the sender can read them.
+
+%\subsection{Message receipts}
+%Upon sending a message the sender has to send an encrypted message that can only be read by the receiver, but also a receipt, another version of the same message that can only be read by the sender itself. The encryption of the receipt is made in a similar way to the message itself, except that the public key used in the encryption of the secret key K is the public key of the sender, has if the sender is sending a message to itself. 

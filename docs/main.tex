@@ -1,0 +1,92 @@
+\documentclass[11pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese,english]{babel}
+
+\usepackage[square,numbers]{natbib}
+\bibliographystyle{abbrvnat}
+
+\usepackage[nottoc]{tocbibind}
+
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{indentfirst}
+\usepackage{pdfpages}
+\usepackage{import}		
+\usepackage{geometry}
+ \geometry{
+ a4paper,
+ left=25mm,
+ right=25mm,
+ bottom=25mm,
+ top=25mm
+ }
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{mathtools}
+
+\title{Final Practical Project: \textit{Report}}
+\author{Inês Lopes , Nº Mec:72725\\João Pedro Fonseca, Nº Mec:73779}
+\date{November 15 2018}
+\renewcommand{\thesection}{\thepart \arabic{section}}
+
+
+
+\begin{document}
+\setcounter{secnumdepth}{4}
+\vspace*{\fill}
+\begin{center}
+\includegraphics[scale = 0.25]{LogoUA.jpg}\\[1cm]
+\Large Universidade de Aveiro
+\\[1.5cm]
+\Large Segurança
+\\[1.5cm]
+
+%\hline
+%\hline
+
+\noindent\rule{12.5cm}{0.01pt}
+\\[0.3cm]
+{\huge{Blockchain-based auction management}\\ First Milestone}
+\\[0.2cm]
+\noindent\rule{12.5cm}{0.01pt}
+\\[1.5cm]
+\makeatletter
+\@author\space
+\\[0.3cm]
+\@date
+\makeatother
+\\[3cm]
+
+\end{center}
+\vspace*{\fill}
+
+\newpage
+
+\tableofcontents
+
+%Client-server message structure and construction
+%Session setup and exploitation: protocol description and diagrams
+%Per user security-related data: description and justification
+%Client-Client messages and receipts: structure and justification
+\newcommand*{\sectiondir}{sections/}
+
+
+\import{\sectiondir}{introduction}
+\import{\sectiondir}{architecture}
+%\import{\sectiondir}{blockchain}
+%\import{\sectiondir}{message_types}
+\import{\sectiondir}{security}
+\import{\sectiondir}{implementation}
+
+
+\nocite{*}
+\bibliography{m1_bib}
+
+
+\end{document}
