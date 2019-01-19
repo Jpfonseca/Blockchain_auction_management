@@ -1,11 +1,22 @@
-from logging import DEBUG, ERROR, INFO
+from os import listdir, read
+from time import sleep
 import PyKCS11
 from PyKCS11 import PyKCS11Error, PyKCS11Lib, Mechanism
-from log import LoggyLogglyMcface
+
+from OpenSSL.crypto import load_certificate, load_crl, FILETYPE_ASN1, FILETYPE_PEM, Error, X509Store, X509StoreContext, \
+    X509StoreFlags, X509StoreContextError
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding as _aspaadding
+from cryptography.exceptions import *
+
+from logging import DEBUG, ERROR, INFO
+from log import LoggyLogglyMcface
+
 
 class PortugueseCitizenCard:
 
@@ -13,9 +24,114 @@ class PortugueseCitizenCard:
         self.mylogger = LoggyLogglyMcface(name=PortugueseCitizenCard.__name__)
         self.mylogger.log(INFO, "Entering CC interface")
 
+        rootCerts, trustedCerts, crlList = self._loadPkiCertsAndCrls()
+        self.mylogger.log(INFO, "Loaded all Certificates and CRL's")
+
+        self.ccStoreContext = self._ccStoreContext(rootCerts, trustedCerts, crlList)
+        self.mylogger.log(INFO,
+                          "Store Context description completed")
+
         self.lib = "libpteidpkcs11.so"
-        self.cipher_mechanism = Mechanism(PyKCS11.CKM_SHA256_RSA_PKCS, "")
+        self.cipherMechanism = Mechanism(PyKCS11.CKM_SHA256_RSA_PKCS, "")
         self.sessions = self.__initPyKCS11__()
+        self.fullnames =self.getSmartcardsNames()
+
+
+    def _loadPkiCertsAndCrls(self):
+        rootCerts = ()
+        trustedCerts = ()
+        crlList = ()
+
+        basename = ["certLists/", "crlLists/"]
+
+        for filename in listdir(basename[0]):
+            try:
+                cert_info = open(basename[0] + filename, 'rb').read()
+            except IOError:
+                self.mylogger.log(ERROR, "IO Exception while reading file : {:s} {:s}".format(basename[0], filename))
+                exit(10)
+            else:
+                if ".cer" in filename:
+                    try:
+                        if "0012" in filename or "0013" in filename:
+                            certAuth = load_certificate(FILETYPE_PEM, cert_info)
+                        else:
+                            certAuth = load_certificate(FILETYPE_ASN1, cert_info)
+                    except Error:
+                        self.mylogger.log(ERROR, "Exception while loading certificate from file : {:s} {:s}".format(
+                            basename[0], filename))
+                        exit(10)
+                    else:
+                        trustedCerts = trustedCerts + (certAuth,)
+                elif ".crt" in filename:
+                    try:
+                        if "ca_ecc" in filename:
+                            root = load_certificate(FILETYPE_PEM, cert_info)
+                        elif "-self" in filename:
+                            root = load_certificate(FILETYPE_PEM, cert_info)
+                        else:
+                            root = load_certificate(FILETYPE_ASN1, cert_info)
+                    except Error:
+                        self.mylogger.log(ERROR, "Exception while loading certificate from file : {:s} {:s}".format(
+                            basename[0], filename))
+                        exit(10)
+                    else:
+                        rootCerts = rootCerts + (root,)
+
+        self.mylogger.log(INFO, "Loaded Root certificates : {:d} out of {:d} ".format(len(rootCerts),
+                                                                                      len(listdir(basename[0]))))
+        self.mylogger.log(INFO, "Loaded Authentication certificates: {:d} out of {:d} ".format(len(trustedCerts), len(
+            listdir(basename[0]))))
+
+        for filename in listdir(basename[1]):
+            try:
+                crl_info = open(basename[1] + "/" + filename, 'rb').read()
+            except IOError:
+                self.mylogger.log(ERROR, "IO Exception while reading file : {:s} {:s}".format(basename[0], filename))
+            else:
+                if ".crl" in filename:
+                    crls = load_crl(FILETYPE_ASN1, crl_info)
+            crlList = crlList + (crls,)
+        self.mylogger.log(INFO, "Certificate revocation lists loaded: {:d} out of {:d} ".format(len(crlList), len(
+            listdir(basename[1]))))
+
+        return rootCerts, trustedCerts, crlList
+
+    def _ccStoreContext(self, rootCerts, trustedCerts, crlList):
+        try:
+            store = X509Store()
+
+            i = 0
+            for _rootCerts in rootCerts:
+                store.add_cert(_rootCerts)
+                i += 1
+
+            self.mylogger.log(INFO, "Root Certificates Added to the X509 Store Context description : {:d}".format(i))
+
+            i = 0
+            for _trustedCerts in trustedCerts:
+                store.add_cert(_trustedCerts)
+                i += 1
+
+            self.mylogger.log(INFO,
+                              "Trusted Authentication Certificates Added to the X509 Store Context description : {:d}".format(
+                                  i))
+
+            i = 0
+            for _crlList in crlList:
+                store.add_crl(_crlList)
+                i += 1
+
+            self.mylogger.log(INFO,
+                              "Certificates Revocation Lists Added to the X509 Store Context description : {:d}".format(
+                                  i))
+
+            store.set_flags(X509StoreFlags.CRL_CHECK | X509StoreFlags.IGNORE_CRITICAL)
+        except X509StoreContext:
+            self.mylogger.log(ERROR, "Store Context description failed")
+            return None
+        else:
+            return store
 
     def __initPyKCS11__(self):
         """
@@ -80,26 +196,27 @@ class PortugueseCitizenCard:
             self.mylogger.log(ERROR,
                               "The the smartcard with the id: {:3d} unexpectedly closed the session".format(
                                   sessionIdx))
-            exit(10)
+            return None
         else:
             try:
                 infos1 = ''.join(chr(c) for c in [c.to_dict()['CKA_SUBJECT'] for c in info][0])
             except (IndexError, TypeError):
                 self.mylogger.log(ERROR,
-                                  " Certificate \"{:15s}\" not found in PyKCSS session with the id :{:2d}".format(AUTH_CERT_LABEL))
-                exit(12)
+                                  " Certificate \"{:15s}\" not found in PyKCSS session with the id :{:2d}".format(
+                                      AUTH_CERT_LABEL))
+                return None
             else:
                 names = infos1.split("BI")[1].split("\x0c")
-                return ' '.join(names[i] for i in range(1,len(names)))
+                return ' '.join(names[i] for i in range(1, len(names)))
 
-
-    def PTEID_GetCertificate(self,sessionIdx):
+    def PTEID_GetCertificate(self, sessionIdx):
         AUTH_CERT_LABEL = "CITIZEN AUTHENTICATION CERTIFICATE"
 
         self.mylogger.log(INFO, "Entering PTEID_GetCertificate with PyKCSS session id :{:2d}".format(sessionIdx))
 
         try:
-            info = self.sessions[sessionIdx].findObjects(template=([(PyKCS11.CKA_CLASS, PyKCS11.CKO_CERTIFICATE),(PyKCS11.CKA_LABEL, AUTH_CERT_LABEL)]))
+            info = self.sessions[sessionIdx].findObjects(
+                template=([(PyKCS11.CKA_CLASS, PyKCS11.CKO_CERTIFICATE), (PyKCS11.CKA_LABEL, AUTH_CERT_LABEL)]))
         except PyKCS11Error:
             self.mylogger.log(ERROR,
                               "The the smartcard with the id: {:3d} unexpectedly closed the session".format(
@@ -108,40 +225,169 @@ class PortugueseCitizenCard:
         else:
             try:
 
-                der =bytes([c.to_dict()['CKA_VALUE'] for c in info][0])
+                der = bytes([c.to_dict()['CKA_VALUE'] for c in info][0])
 
             except (IndexError, TypeError):
                 self.mylogger.log(ERROR,
                                   " Certificate \"{:15s}\" not found in PyKCSS session with the id :{:2d}".format(
                                       AUTH_CERT_LABEL))
-                exit(12)
+                return None
             else:
                 # converting DER format to x509 certificate
                 try:
-                    cert= x509.load_der_x509_certificate(der, default_backend()).public_bytes(Encoding.PEM)
-                except :
+                    cert = x509.load_der_x509_certificate(der, default_backend()).public_bytes(Encoding.PEM)
+                except:
                     self.mylogger.log(ERROR,
                                       " Certificate for sessionID :{:2d} wasn't loaded: \n".format(sessionIdx))
+                    return None
                 else:
                     self.mylogger.log(INFO,
-                                  " Certificate for sessionID :{:2d} loaded:\n {:s}".format(sessionIdx,
-                                      cert.decode("utf-8")))
+                                      " Certificate for sessionID :{:2d} loaded:\n {:s}".format(sessionIdx,
+                                                                                                cert.decode("utf-8")))
                     return cert
+
+
+    def getSmartcardsNames(self):
+        try:
+            fullnames =[self.PTEID_GetID(i) for i in self.slots]
+        except:
+            self.mylogger.log(ERROR,
+                              "The service was unable to fetch all smartcards data")
+        else:
+            return fullnames
+
+    def login(self,slot):
+        session=self.sessions[slot]
+        name=self.fullnames[slot]
+        pin=None
+        while True:
+            pin=input("Please insert your authentication pin:")
+            if isinstance(pin, str):
+                if not len(pin) == 4 :
+                    print("Your Pin is invalid ! It should have 4 digits: %s \n" % pin)
+                else:
+                    if not pin.isdigit():
+                        print("Your Pin is invalid ! It should have 4 digits: %s \n" % pin)
+                    else:
+                        try:
+                            if name == self.getSmartcardsNames()[slot]:
+                                session.login(pin)
+                        except PyKCS11Error:
+                            self.mylogger.log(ERROR, "Couldn't login into the card on slot {:d}".format(slot))
+                            return False
+                        else:
+                            sleep(2)
+                            self.mylogger.log(INFO, "Session Login Initiated for smartcard on slot {:d}".format(slot))
+                            return True
+
+    def verifyChainOfTrust(self, cert):
+
+        if cert is None:
+            return None
+
+        storecontext = None
+        try:
+            certx509 = load_certificate(FILETYPE_PEM, cert)
+            storecontext = X509StoreContext(self.ccStoreContext, certx509).verify_certificate()
+        except X509StoreContextError as strerror:
+            self.mylogger.log(ERROR,
+                              "Impossible to verify the certificate given for the store context: \n{:s}".format(strerror.__doc__))
+            return False
+        except Error as strerror:
+            self.mylogger.log(ERROR,
+                              "The certificate to be verified wasn't loaded: \n Error Information:{:s}".format(strerror.__doc__))
+            return False
+
+        if storecontext is None:
+            return True
+        else:
+            return False
+
+    def sign_data(self,slot,data):
+        label="CITIZEN AUTHENTICATION KEY"
+        session=self.sessions[slot]
+        cipherMechnism=Mechanism(PyKCS11.CKM_SHA256_RSA_PKCS, "")
+
+        if isinstance(data, str):
+            try:
+                privateKey = self.sessions[slot].findObjects(template=([(PyKCS11.CKA_CLASS, PyKCS11.CKO_PRIVATE_KEY),
+                                                                        (PyKCS11.CKA_LABEL, "CITIZEN AUTHENTICATION KEY")
+                                                                 ]))[0]
+
+                signedBytelist=session.sign(privateKey,data.encode(),cipherMechnism)
+            except PyKCS11Error:
+                self.mylogger.log(ERROR,
+                                  "The smartcard with the id: {:3d} unexpectedly closed the session while trying to sign data".format(
+                                      slot))
+            except IndexError:
+                self.mylogger.log(ERROR,
+                                  "The smartcard with the id: {:3d} unexpectedly closed the session".format(
+                                      slot))
+            else:
+                return bytes(signedBytelist)
+        return None
+
+    def verifySignature(self,cert,data,signature):
+        cert = x509.load_pem_x509_certificate(cert, default_backend())
+        pubk = cert.public_key()
+        padding = _aspaadding.PKCS1v15()
+
+        if not isinstance(pubk, rsa.RSAPublicKey):
+            self.mylogger.log(ERROR,"The provided certificate doesn't have a RSA public Key")
+            return False
+        try:
+            state=pubk.verify(
+                signature,
+                bytes(data.encode()),
+                padding,
+                hashes.SHA256(),
+            )
+
+        except InvalidSignature as strerror:
+            self.mylogger.log(ERROR,"Invalid Signature %s".format(strerror.__doc__))
+            return False
+        else:
+            return True
+
+    def logout(self,slot):
+        try:
+            session=self.sessions[slot]
+            session.logout()
+            session.closeSession()
+        except PyKCS11Error as strerror:
+            session.closeSession()
+            self.mylogger.log(DEBUG,
+                                  " No open session found for slot with the id :{:2d} \nInfo : \n{:15s}".format(slot,strerror.__doc__))
 
 if __name__ == '__main__':
     pteid = PortugueseCitizenCard()
-    fullnames = [pteid.PTEID_GetID(i) for i in pteid.slots]
+    fullnames = pteid.getSmartcardsNames()
 
     slot = -1
     if len(pteid.sessions) > 0:
         temp = ''.join('Slot{:3d}-> Fullname: {:10s}\n'.format(i, fullnames[i]) for i in range(0, len(fullnames)))
 
         while slot < 0 or slot > len(pteid.sessions):
-            slot = int(input("Available Slots: \n{:40s} \n\nWhich Slot do you wish to use? ".format(temp)))
+            slot = input("Available Slots: \n{:40s} \n\nWhich Slot do you wish to use? ".format(temp))
+            if slot.isdigit():
+                slot=int(slot)
+            else:
+                slot=-1
 
     for i in range(0, len(pteid.sessions)):
         if slot != i:
             pteid.sessions[i].close()
 
-    st1r=pteid.PTEID_GetCertificate(slot)
-    pteid.sessions[slot].closeSession()
+    st1r = pteid.PTEID_GetCertificate(slot)
+
+    print("\nIs this certificate valid: {:s}".format(str(pteid.verifyChainOfTrust(st1r))))
+
+    pteid.login(slot)
+
+    datatobeSigned="Random Randomly String"
+    signedData=pteid.sign_data(slot,datatobeSigned)
+
+    print(datatobeSigned + "\n")
+    if(pteid.verifySignature(pteid.PTEID_GetCertificate(slot),datatobeSigned,signedData)):
+            print("Verified")
+    pteid.logout(slot)
