@@ -10,7 +10,7 @@ class LoggyLogglyMcface(Logger):
     It will print the logs based on the level of the warning/error and will be associated with a message from the class
     which called it.
     """
-    def __init__(self, name,level=DEBUG,output="std", *args, **kwargs):
+    def __init__(self, name,level=DEBUG,output=None, *args, **kwargs):
         """
 
         :param name: name of the class which calls the logger

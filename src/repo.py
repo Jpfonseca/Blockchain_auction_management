@@ -2,12 +2,18 @@ import json
 from socket import *
 from blockchain import *
 
+from logging import DEBUG, ERROR, INFO
+from log import LoggyLogglyMcface
+
 HOST = "127.0.0.1"
 PORT_MAN = 8080
 PORT_REPO = 8081
 
 class Repository():
     def __init__(self, host, port):
+        self.mylogger = LoggyLogglyMcface(name=Repository.__name__)
+        self.mylogger.log(INFO, "Entering Repository interface")
+
         self.host = host
         self.port = port
         # public keys
@@ -31,16 +37,20 @@ class Repository():
 
         print("Listening...")
 
+        self.mylogger.log(INFO, "Exchanging public Key with the Manager")
         # send and receive public key (manager)
         data1, self.manager_address = self.sock.recvfrom(4096)
         print("> manager pubkey received")
         sent = self.sock.sendto(str.encode(self.repo_pubkey), self.manager_address)
+        self.mylogger.log(INFO, "Manager Pubkey received")
 
+        self.mylogger.log(INFO, "Exchanging public Key with the Client")
         # send and receive public key (client)
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
         sent = self.sock.sendto(str.encode(self.repo_pubkey), client_addr)
         self.address_client.append(client_addr)
+        self.mylogger.log(INFO, "Client Pubkey received")
 
         # save public keys
         data1 = json.loads(data1)
@@ -49,6 +59,7 @@ class Repository():
         data2 = json.loads(data2)
         if 'c_pubk' in data2:
             self.clients_pubkey.add(data2['c_pubk'])
+        self.mylogger.log(INFO, "Repo Pubkey : \n{:s}\nClient Pubkey : \n{:s}".format(data1['man_pubk'],data2['c_pubk']))
 
         self.loop()
 

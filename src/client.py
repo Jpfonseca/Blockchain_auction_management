@@ -7,6 +7,9 @@ import sys
 import hashlib
 from datetime import datetime
 
+from logging import DEBUG, ERROR, INFO
+from log import LoggyLogglyMcface
+
 HOST = "127.0.0.1"
 # port client uses to communicate with client
 PORT_MAN = 8080
@@ -15,6 +18,10 @@ PORT_REPO = 8081
 
 class Client:
     def __init__(self, host, port_man, port_repo, client_pubkey, digest):
+
+        self.mylogger = LoggyLogglyMcface(name=Client.__name__)
+        self.mylogger.log(INFO, "Entering Client interface")
+
         self.host = host
         self.port_man = port_man
         self.port_repo = port_repo
@@ -35,15 +42,21 @@ class Client:
     # Servers and Client exchange Public Keys
     def start(self):
 
+        self.mylogger.log(INFO, "Exchanging public Key with the Repo")
         # send and receive public key (repository)
         bytes = self.sock.sendto(str.encode(self.client_pubkey), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(4096)
         print("> repository pubkey received")
+        self.mylogger.log(INFO, "Repo Pubkey received")
 
+        self.mylogger.log(INFO, "Exchanging public Key with the Manager")
         # send and receive public key (manager)
         bytes = self.sock.sendto(str.encode(self.client_pubkey), (self.host, self.port_man))
         data2, server = self.sock.recvfrom(4096)
         print("> manager pubkey received")
+        self.mylogger.log(INFO, "Repo Pubkey received")
+
+        self.mylogger.log(INFO, "Repo Pubkey : \n{:s}\nManager Pubkey : \n{:s}".format(data1['repo_pubk'],data2['man_pubk']))
 
         data1 = json.loads(data1)
         if 'repo_pubk' in data1:
@@ -58,6 +71,7 @@ class Client:
 
     # menu of the client
     def loop(self):
+        self.mylogger.log(INFO, "Entered Client Menu")
         while (True):
             print("\n----Menu----\n1 - Create auction\n2 - Place bid\n3 - Check receipt\n4 - List active auctions\n"
                   "5 - List closed auctions\n6 - Close\n")
@@ -81,6 +95,7 @@ class Client:
 
     # send new auction parameters to manager server
     def create_auction(self):
+        self.mylogger.log(INFO, "Creating auction")
         try:
             name = input("Name: ")
             time_limit = input("Time limit: ")
@@ -118,6 +133,7 @@ class Client:
 
     # request a bid, calculate proof-of-work, send parameters + answer to repository server
     def place_bid(self):
+        self.mylogger.log(INFO, "Placing bid ")
         serial = input("Serial number of auction:")
         amount = input("Amount: ")
 
@@ -151,6 +167,7 @@ class Client:
 
     # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
+        self.mylogger.log(INFO, "Checking Receipt ")
         msg = json.dumps({'command': 'check_receipt'})
         bytes = self.sock.sendto(str.encode(msg), self.repo_address)
         data, server = self.sock.recvfrom(4096)
@@ -158,6 +175,7 @@ class Client:
     # list active auctions
     def list_auctions(self):
         try:
+            self.mylogger.log(INFO, "List active auctions ")
             msg = json.dumps({'command': 'list_open'})
             bytes = self.sock.sendto(str.encode(msg), self.repo_address)
             data, server = self.sock.recvfrom(4096)
@@ -165,10 +183,13 @@ class Client:
             print(data)
         except:
             print("Can't list active auctions")
+            self.mylogger.log(INFO, "Can't list active auctions")
+
 
     # list closed auctions
     def list_closed_auctions(self):
         try:
+            self.mylogger.log(INFO, "List closed auctions ")
             msg = json.dumps({'command': 'list_closed'})
             bytes = self.sock.sendto(str.encode(msg), self.repo_address)
             data, server = self.sock.recvfrom(4096)
@@ -183,12 +204,15 @@ class Client:
 
     # generate string with length = size
     def gen_string(self, size):
+        self.mylogger.log(INFO, "Generating string")
         answer = ''.join(
             random.choice(string.digits + string.ascii_lowercase + string.ascii_uppercase) for c in range(size))
         return answer
 
     # calculate the proof-of-work result
     def get_pow(self, size):
+        self.mylogger.log(INFO, "Calculating proof-of-work with size {}".format(size))
+
         result = False
         solution = None
 
