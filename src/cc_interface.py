@@ -350,6 +350,8 @@ class PortugueseCitizenCard:
             return False
 
         if storecontext is None:
+            self.mylogger.log(INFO,
+                              "The smartcard with the id: {:3d} was sucessfully verified".format(slot))
             return True
         else:
             return False
@@ -374,6 +376,10 @@ class PortugueseCitizenCard:
                                                                         ]))[0]
 
                 signedBytelist = session.sign(privateKey, data.encode(), cipherMechnism)
+                self.mylogger.log(INFO,
+                                  "The smartcard with the id: {:3d}\n Signed this Data: {:15s} \n Signature : {}".format(
+                                      slot, data,
+                                      bytes(signedBytelist)))
             except PyKCS11Error:
                 self.mylogger.log(ERROR,
                                   "The smartcard with the id: {:3d} unexpectedly closed the session while trying to sign data".format(
@@ -420,6 +426,9 @@ class PortugueseCitizenCard:
             self.mylogger.log(ERROR, "Invalid Signature %s".format(TypeError.__doc__))
             return False
         else:
+            self.mylogger.log(INFO,
+                              "The smartcard with the id: {:3d} signed data. Signature :\n{} \n Status: Signature "
+                              "Verified".format(slot,signature))
             return True
 
     def logout(self, slot):
