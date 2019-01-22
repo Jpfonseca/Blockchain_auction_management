@@ -449,10 +449,9 @@ if __name__ == '__main__':
                     slot = int(slot)
                 else:
                     slot = -1
-
         for i in range(0, len(pteid.sessions)):
             if slot != i:
-                pteid.sessions[i].close()
+                pteid.sessions[i].closeSession()
 
         st1r = pteid.PTEID_GetCertificate(slot)
 
@@ -469,5 +468,8 @@ if __name__ == '__main__':
 
     except KeyboardInterrupt:
         pteid.logout(slot)
+        pteid.sessions[slot].closeSession()
+
     else:
         pteid.logout(slot)
+        pteid.sessions[slot].closeSession()
