@@ -1,6 +1,7 @@
 import json
 from socket import *
 from blockchain import *
+from ast import literal_eval
 
 from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
@@ -19,7 +20,7 @@ class Manager:
         # public keys
         self.clients_pubkey = set()
         self.repo_pubkey = None
-        self.man_pubkey = json.dumps({'man_pubk': 'ghi'})
+        self.man_pubkey = 'ghi'
         # list of addresses
         self.address_client = []
         self.repo_address = None
@@ -31,23 +32,26 @@ class Manager:
         self.sock.bind((self.host, self.port))
         # current client being served
         self.current_client = None
+        self.client_ids = 1
 
-    # Server and Client exchange Public Keys
+    # server and client exchange public keys
     def start(self):
 
         print("Listening...")
+
         self.mylogger.log(INFO, "Exchanging public Key with the Repo")
-        # send and receive public key (repo)
-        sent = self.sock.sendto(str.encode(self.man_pubkey), (self.host, PORT_REPO))
+        msg = json.dumps({'man_pubk':self.man_pubkey, 'signature': 'oi'})
+        sent = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
         print("> repository pubkey received")
         data1, self.repo_address = self.sock.recvfrom(4096)
         self.mylogger.log(INFO, "Repo Pubkey received")
 
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
-        # send and receive public key (client)
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
-        sent = self.sock.sendto(str.encode(self.man_pubkey), client_addr)
+        msg = json.dumps({'man_pubk': self.man_pubkey, 'client_id': '{}'.format(self.client_ids), 'signature': 'oi'})
+        self.client_ids = self.client_ids+1
+        sent = self.sock.sendto(str.encode(msg), client_addr)
         self.address_client.append(client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
@@ -63,7 +67,7 @@ class Manager:
 
         self.loop()
 
-    # manager waits for client's messages
+    # manager waits for client or repository messages
     def loop(self):
         while (True):
             data, addr = self.sock.recvfrom(4096)
@@ -72,15 +76,64 @@ class Manager:
             # add new client
             if (addr not in self.address_client) and (addr != self.repo_address):
                 print("> client pubkey received")
-                sent = self.sock.sendto(str.encode(self.man_pubkey), addr)
+                msg = json.dumps({'man_pubk': self.man_pubkey, 'client_id': self.client_ids, 'signature': 'oi'})
+                self.client_ids = self.client_ids+1
+                sent = self.sock.sendto(str.encode(msg), addr)
                 self.address_client.append(addr)
+                self.clients_pubkey.add(data2['c_pubk'])
 
             if 'auction' in data2:
-                sent = self.sock.sendto(data, self.repo_address)
+                data2['signature'] = 'oi'
+                data = json.dumps(data2)
+                sent = self.sock.sendto(str.encode(data), self.repo_address)
                 self.current_client = addr
 
-            if 'ack' in data2:
-                sent = self.sock.sendto(data, self.current_client)
+            if 'ack' in data2 and 'info' in data2:
+                print("> auction creation: OK")
+                data2['signature'] = 'oi'
+                data = json.dumps(data2)
+                sent = self.sock.sendto(str.encode(data), self.current_client)
+
+            if 'end' in data2:
+                winner_dict = {}
+                result = []
+
+                print("> auction ended")
+
+                # load the auction file and calculate the winner
+                with open(data2['end']) as f:
+                    lines = f.readlines()
+
+                auction = lines.pop(0)
+                auction_dict = literal_eval(auction)
+
+                for line in lines:
+                    line = line[:-1]
+                    bid = literal_eval(line)
+                    winner_dict[str(bid['id'])] = bid['amount']
+
+                    # decrypt bids
+
+                winner = max(zip(winner_dict.values(), winner_dict.keys()))
+
+                auction_dict['winner'] = winner[1]
+                auction_dict['winner_amount'] = winner[0]
+                auction_dict['state'] = 'closed'
+
+                result.append(str(auction_dict))
+
+                for line in lines:
+                    line = line[:-1]
+                    result.append(line)
+
+                with open(data2['end'], 'w') as f:
+                    for line in result:
+                        f.write("%s\n" % line)
+
+                # the winner was found and the new blockchain was written to the file
+                msg = json.dumps({'ack': 'ok'})
+                sent = self.sock.sendto(str.encode(msg), self.repo_address)
+
 
 if __name__ == "__main__":
     r = Manager(HOST, PORT)

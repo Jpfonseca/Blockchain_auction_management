@@ -1,3 +1,5 @@
+import json
+import os
 import re
 from ast import literal_eval
 
@@ -7,19 +9,21 @@ from log import LoggyLogglyMcface
 
 class Block:
 
-    def __init__(self, serial=None, hash=None, amount=None, identity=None, timestamp=None):
+    def __init__(self, serial=None, hash=None, hash_prev=None, amount=None, name=None, id=None, timestamp=None):
         self.mylogger = LoggyLogglyMcface(name=Block.__name__)
         self.mylogger.log(INFO, "Entering Block interface")
 
         self.serial = serial
         self.hash = hash
+        self.hash_prev = hash_prev
         self.amount = amount
-        self.identity = identity
+        self.name = name
+        self.id = id
         self.timestamp = timestamp
         self.next = None
         self.previous = None
 
-        self.block_dict = {'serial': serial, 'hash': hash, 'amount': amount, 'identity': identity,
+        self.block_dict = {'serial': serial, 'hash': hash, 'hash_prev': hash_prev, 'amount': amount, 'name': name, 'id': id,
                            'timestamp': timestamp}
 
     # get info about a bid
@@ -29,8 +33,8 @@ class Block:
 
 class Blockchain:
 
-    def __init__(self, serial=None, name=None, time_limit=None, description=None, type=None, bidders=None,
-                 limit_bids=None, state=None, result=None):
+    def __init__(self, serial=None, timestamp=None, name=None, time_limit=None, description=None, type=None, bidders=None,
+                 limit_bids=None, state=None, winner=None, winner_amount=None):
 
         self.mylogger = LoggyLogglyMcface(name=Blockchain.__name__)
         self.mylogger.log(INFO, "Entering Blockchain interface")
@@ -38,6 +42,7 @@ class Blockchain:
         self.head_block = None
         self.tail_block = None
         self.serial = serial
+        self.timestamp = timestamp
         self.name = name
         self.time_limit = time_limit
         self.description = description
@@ -45,15 +50,16 @@ class Blockchain:
         self.bidders = bidders
         self.limit_bids = limit_bids
         self.state = state
-        self.result = result
+        self.winner = winner
+        self.winner_amount = winner_amount
 
-        self.blockchain_dict = {'serial': serial, 'name': name, 'time-limit': time_limit,
+        self.blockchain_dict = {'serial': serial, 'timestamp': timestamp, 'name': name, 'time-limit': time_limit,
                                 'description': description, 'type': type, 'bidders': bidders, 'limit_bids': limit_bids,
-                                'state': state, 'result': result}
+                                'state': state, 'winner': winner, 'winner_amount': winner_amount}
 
-    # get info about an auction (blockchain)
+    # get info about an auction
     def info(self):
-        self.mylogger.log(INFO, "The Blockchain with the serial {:s} current state is :\n {:s}".format(self.serial, str(
+        self.mylogger.log(INFO, "The Blockchain with the serial {} current state is :\n {}".format(self.serial, str(
             self.blockchain_dict)))
         return str(self.blockchain_dict)
 
@@ -65,100 +71,58 @@ class Blockchain:
         while current_block is not None:
             counter = counter + 1
             current_block = current_block.next
-        self.mylogger.log(INFO, "The Blockchain with the serial {:s} has : {:d} blocks".format(self.serial, counter))
+        self.mylogger.log(INFO, "The Blockchain with the serial {} has : {} blocks".format(self.serial, counter))
         return counter
 
-    # get all data of all bids
-    def output_blockchain(self):
-        self.mylogger.log(INFO, "The Blockchain with the serial {:s} has these Bids :\n".format(self.serial))
+    # get all bids of an identity
+    def bids_client(self, id):
+        result = []
         current_block = self.head_block
+        self.mylogger.log(INFO, "The client with the id {} has these Bids:".format(id))
 
         while current_block is not None:
-            print("Hash: %s, Amount: %f, Identity: %s" % (
-                current_block.hash, current_block.amount, current_block.identity))
-            self.mylogger.log(INFO,
-                              "                                                Hash: {:s}, Amount: {:f}, Identity: {:s}".format(
-                                  current_block.hash,
-                                  current_block.amount,
-                                  current_block.identity))
+            if current_block.id == str(id) or current_block.id == int(id):
+                result.append(current_block.info())
             current_block = current_block.next
-        return
 
-    # get all bids of a certain identity
-    def output_bids(self, identity):
+        return result
+
+    # get all bids of an auction
+    def bids_auction(self, serial):
+        result = []
         current_block = self.head_block
-        self.mylogger.log(INFO,
-                          "\nThe Blockchain with the serial {:s} has these Bids from the user {:s} :\n".format(self.serial,
-                                                                                                           identity))
+        self.mylogger.log(INFO,"The Blockchain with the serial {} has these Bids:".format(serial))
 
         while current_block is not None:
-            if current_block.identity == identity:
-                print("Hash: %s, Amount: %f" % (
-                    current_block.hash, current_block.amount))
-                self.mylogger.log(INFO,
-                                  "                                                Hash: {:s}, Amount: {:f}".format(
-                                      current_block.hash,
-                                      current_block.amount))
+            if current_block.serial == str(serial) or current_block.serial == int(serial):
+                result.append(current_block.info())
             current_block = current_block.next
-        return
 
-    # get bid of a certain identity, processed at a certain timestamp
-    def output_bid(self, identity, timestamp):
-        current_block = self.head_block
-        self.mylogger.log(INFO,
-                          "The Blockchain with the serial {:s} has these Bids from the user {:s} at the timestamp, "
-                          "{:s}  :".format(self.serial, identity, timestamp))
-        while current_block is not None:
-            if current_block.identity == identity and current_block.timestamp == timestamp:  # current_node.has_value(value)
-                print("Hash: %s, Amount: %f" % (
-                    current_block.hash, current_block.amount, current_block.identity))
-            current_block = current_block.next
-        return
+        return result
 
-    # write the current blockchain to file
-    def chain_to_file(self, chain_info, file):
-        self.mylogger.log(INFO,
-                          "\nThe Blockchain will be saved into the file: {:s}\n".format(file))
-        text_file = open(file, "w")
-        text_file.write("%s\n" % chain_info)
+    # write the current blockchain to a file
+    def save_to_file(self, file):
+        self.mylogger.log(INFO,"\nThe Blockchain will be saved into the file: {}\n".format(file))
+
+        current_path = os.getcwd()
+        path = "{}/auctions/{}".format(current_path, file)
+        text_file = open(path, "w")
+        text_file.write("%s\n" % self.info())
 
         current_block = self.head_block
-
-        while current_block is not None:
-            text_file.write("%s %f %s\n" % (current_block.hash, current_block.amount, current_block.identity))
-            current_block = current_block.next
+        if current_block is not None:
+            while current_block is not None:
+                text_file.write("%s\n" % current_block.info())
+                current_block = current_block.next
 
         text_file.close()
-        self.mylogger.log(INFO,
-                          "The Blockchain was saved into the file: {:s}\n".format(file))
-
-    # load a blockchain from a file
-    def load_file(self, file):
-        self.mylogger.log(INFO,
-                          "\nThe Blockchain will be loaded from file: {:s}\n".format(file))
-        with open(file) as f:
-            content = f.readlines()
-        content = [x.strip("\n") for x in content]
-
-        for i in range(len(content)):
-            if i == 0:
-                self.blockchain = literal_eval(content[0])
-                print(self.blockchain)
-
-            elif i > 1:
-                hash, amount, identity = content[i].split()
-                block_line = Block(hash, float(amount), identity)
-                self.add_block(block_line)
-                self.tail_block = block_line
-
-        self.mylogger.log(INFO,
-                          "The Blockchain was loaded into the file: {:s}".format(file))
+        self.mylogger.log(INFO, "The Blockchain was saved into the file: {}\n".format(file))
 
     # add block at the end of the blockchain
     def add_block(self, block):
         self.mylogger.log(INFO,
-                          "Adding block into the blockchain: \n Hash: {:s}, Amount: {:f}, Identity: {:s}, Timestamp: "
-                          "{:s}".format(block.hash, block.amount, block.identity, block.timestamp))
+                          "Adding block into the blockchain: \n Hash: {}, Amount: {}, Identity: {}, Timestamp: {}"
+                          "".format(block.hash, block.amount, block.id, block.timestamp))
         if isinstance(block, Block):
             if self.head_block is None:
                 self.head_block = block
@@ -187,33 +151,3 @@ class Blockchain:
             self.mylogger.log(INFO,
                               "Removed all blocks from the Blockchain\n")
         return
-
-
-if __name__ == '__main__':
-    # Testing
-
-    chain1 = Blockchain("12345", "auction1", "120", "auction of shoes")
-#    chain1.info()
-
-    chain1.add_block(Block("ahsdgetgatgsc", "atsgwrefdy152", 300, "Identity", "1-12-2018 23:15"))
-    chain1.add_block(Block("ah333etgatgsc", "atsgwrefdy153", 350, "Identity", "1-12-2018 23:20"))
-    chain1.add_block(Block("ahsdget222gsc", "atsgwrefdy154", 400, "Identity", "1-12-2018 23:22"))
-
-    chain1.chain_length()
-
-    print("\n> Output of blockchain")
-    chain1.output_blockchain()
-    print("\n> Output of all bids of a user")
-    chain1.output_bids("atsgwrefdy153")
-    print("\n> Output of a bid of a user (defined timestamp)")
-    print(chain1.info())
-    chain1.output_bid("atsgwrefdy152", "1-12-2018 23:15")
-
-    print("\n> Loading blockchain from file")
-    chain1.chain_to_file(chain1.info(), "chain_output.txt")
-    chain1.load_file("chain_output.txt")
-    chain1.output_blockchain()
-
-    print("\n> Removing blockchain from memory")
-    chain1.remove_blocks()
-    chain1.output_blockchain()

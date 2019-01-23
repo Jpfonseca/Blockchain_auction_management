@@ -1,0 +1,4 @@
+{'serial': 1, 'timestamp': '01/23/2019, 22:00:37', 'name': 'oi', 'time-limit': '0h2m0s', 'description': 'my auction', 'type': 'e', 'bidders': '1,2,3', 'limit_bids': None, 'state': 'closed', 'winner': '2', 'winner_amount': '50'}
+{'serial': '1', 'hash': '111Up2zAP6', 'hash_prev': '0', 'amount': '23', 'name': 'Ines Lopes', 'id': '1', 'timestamp': '01/23/2019, 22:01:52'}
+{'serial': '1', 'hash': '111ur4ajEJ', 'hash_prev': '111Up2zAP6', 'amount': '40', 'name': 'Ines Lopes', 'id': 2, 'timestamp': '01/23/2019, 22:01:53'}
+{'serial': '1', 'hash': '111HVCik8c', 'hash_prev': '111ur4ajEJ', 'amount': '50', 'name': 'Ines Lopes', 'id': 2, 'timestamp': '01/23/2019, 22:02:09'}
