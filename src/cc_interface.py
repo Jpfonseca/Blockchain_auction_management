@@ -363,12 +363,7 @@ class PortugueseCitizenCard:
             return False
 
         if storecontext is None:
-            if slot is None:
-                self.mylogger.log(INFO,
-                                  "The smartcard  was sucessfully verified")
-            else:
-                self.mylogger.log(INFO,
-                              "The smartcard with the id: {:3d} was sucessfully verified".format(slot))
+            self.mylogger.log(INFO,"The smartcard  was sucessfully verified")
             return True
         else:
             return False
