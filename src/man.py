@@ -33,10 +33,9 @@ class Manager:
 
         self.host = host
         self.port = port
-        # public keys
-        self.clients_pubkey = set()
+        # stored public keys
         self.repo_pubkey = None
-
+        self.pubkey_dict = {}
         # list of addresses
         self.address_client = []
         self.repo_address = None
@@ -50,40 +49,40 @@ class Manager:
         self.current_client = None
         # generate public and private key
         self.certgen = GenerateCertificates()
-        # dictionary of 'id' and public key
-        self.pubkey_dict = {}
+
 
     # server and client exchange public keys
     def start(self):
+        # verify if manager private key already exists. load if true
         if self.certgen.checkExistence(self.name):
             self.certgen.loadPrivateKeyFromFile(self.privKname, password=self.password)
         else:
             self.certgen.writePrivateKeyToFile(self.privKname, password=self.password)
 
+        # get public key of manager and store to global variable
         self.man_pubkeyb = self.certgen.publicKeyToBytes()
         self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
 
         print("Listening...")
 
+        # 1) exchange public keys with the repository
         self.mylogger.log(INFO, "Exchanging public Key with the Repo")
-        msg = json.dumps({'man_pubk':self.man_pubkey})
+        msg = json.dumps({'man_pubk': self.man_pubkey})
         sent = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
         print("> repository pubkey received")
         data1, self.repo_address = self.sock.recvfrom(4096)
         self.mylogger.log(INFO, "Repo Pubkey received")
 
-        msg = json.dumps({'man_pubk': self.man_pubkey})
-
-        # save repo public key
+        # store the received repository public key in global variable
         data1 = json.loads(data1)
         if 'repo_pubk' in data1:
             self.repo_pubkey = base64.b64decode(data1['repo_pubk'].encode())
         self.mylogger.log(INFO, "Repo Pubkey : \n{}".format(self.repo_pubkey))
 
+        # 2) exchange public key with client
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
-
         sent = self.sock.sendto(str.encode(msg), client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
@@ -92,12 +91,12 @@ class Manager:
 
         self.loop()
 
+    # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):
         cert = None
         if 'c_pubk' in message:
             cert = base64.b64decode(message['c_pubk'].encode())
-            print("data 2 : {} \ntype: {} ".format(cert, type(cert)))
-            self.clients_pubkey.add(cert)
+            # print("data 2 : {} \ntype: {} ".format(cert, type(cert)))
 
         self.mylogger.log(INFO, "Client Pubkey : \n{}".format(cert))
         cc = PortugueseCitizenCard()
@@ -108,15 +107,14 @@ class Manager:
             msg = json.dumps({'err': 'invalid certificate'})
             sent = self.sock.sendto(str.encode(msg), client_addr)
             if self.loggedInClient == 0:
-                print("Invalid Client Certificate")
+                print("> invalid client certificate")
                 sys.exit(-1)
 
-        print("Client Certificate verified ")
+        print("> client certificate verified ")
         self.mylogger.log(INFO, "Verified Client Certificate {}".format(cert))
         self.loggedInClient += 1
         self.pubkey_dict[message['id']] = cert
         self.address_client.append(client_addr)
-        # save to file
 
     # manager waits for client or repository messages
     def loop(self):

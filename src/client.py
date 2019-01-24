@@ -40,7 +40,6 @@ class Client:
 
     # servers and client exchange public keys
     def start(self):
-
         # ask user which slot to use
         fullnames = self.cc.getSmartcardsNames()
 
@@ -61,7 +60,7 @@ class Client:
             if slot != i:
                 self.cc.sessions[i].closeSession()
 
-        # get cc certificate - cert (bytes)
+        # get cc certificate (bytes)
         cert = self.cc.PTEID_GetCertificate(self.slot)
         self.client_cert=cert
 
@@ -69,12 +68,14 @@ class Client:
         self.id = self.cc.certGetSerial()
         msg = json.dumps({'c_pubk': pubk, 'id': self.id})
 
+        # send client certificate and id to repository
         self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Repo")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(4096)
         print("> repository pubkey received")
         self.mylogger.log(INFO, "Repo Pubkey received")
 
+        # send client certificate and id to manager
         self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Manager")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
         data2, server = self.sock.recvfrom(4096)
@@ -84,20 +85,21 @@ class Client:
         data1 = json.loads(data1)
         data2 = json.loads(data2)
 
+        # store repository and manager public key in global variable
         self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
         self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
 
+        # the client's certificate is invalid
         if 'err' in data1:
             print("Invalid Certificate")
             sys.exit(-1)
-
+        # save the repository and manager address
         if 'repo_pubk' in data1:
             self.repo_address = address
         if 'man_pubk' in data2:
             self.man_address = server
-        self.mylogger.log(INFO,
-                          "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
 
+        self.mylogger.log(INFO,"Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
         self.loop()
 
     # menu of the client
