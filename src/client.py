@@ -1,13 +1,5 @@
-import hashlib
-import json
-import random
-import string
+import json, random, string, sys, base64, datetime
 from socket import *
-import sys
-import base64
-
-import hashlib
-from datetime import datetime
 
 from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
@@ -92,17 +84,19 @@ class Client:
         data1 = json.loads(data1)
         data2 = json.loads(data2)
 
-        self.mylogger.log(INFO, "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(data1['repo_pubk'],data2['man_pubk']))
+        self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
+        self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
 
-        if 'repo_pubk' in data1:
-            self.repo_pubkey = data1['repo_pubk']
-            self.repo_address = address
         if 'err' in data1:
             print("Invalid Certificate")
             sys.exit(-1)
+
+        if 'repo_pubk' in data1:
+            self.repo_address = address
         if 'man_pubk' in data2:
-            self.man_pubkey = data2['man_pubk']
             self.man_address = server
+        self.mylogger.log(INFO,
+                          "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
 
         self.loop()
 
@@ -135,7 +129,12 @@ class Client:
             elif option == '9':
                 self.display_client()
             elif option == '10':
+                msg = json.dumps({'exit': 'client exit'})
+                sent = self.sock.sendto(str.encode(msg), self.man_address)
+                sent = self.sock.sendto(str.encode(msg), self.repo_address)
                 #remove files
+                self.mylogger.log(INFO, "Exiting Client")
+
                 sys.exit()
             else:
                 print("Not a valid option!\n")
@@ -353,5 +352,9 @@ if __name__ == "__main__":
     try:
         c.start()
     except KeyboardInterrupt:
+        msg = json.dumps({'exit': 'client exit'})
+        sent = c.sock.sendto(str.encode(msg), c.man_address)
+        sent = c.sock.sendto(str.encode(msg), c.repo_address)
+        self.mylogger.log(INFO, "Exiting Client")
         print("Exiting...")
         c.close()

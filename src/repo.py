@@ -1,5 +1,6 @@
 import os,datetime,sys,json,base64,re
 
+from os import listdir
 from ast import literal_eval
 from socket import *
 from blockchain import *
@@ -15,17 +16,30 @@ PORT_MAN = 8080
 PORT_REPO = 8081
 
 class Repository():
+
     def __init__(self, host, port):
+        LOG = "./log.txt"
+
+        for filename in listdir("./"):
+            if filename == "log.txt":
+                os.remove(LOG)
+
         self.mylogger = LoggyLogglyMcface(name=Repository.__name__)
         self.mylogger.log(INFO, "Entering Repository interface")
 
+        self.name = Repository.__name__
+        self.privKname = "privK" + self.name
+        self.password = "123"
+
+        self.repo_pubkey = None
+        self.repo_pubkeyb = None
         self.loggedInClient=0
 
         self.host = host
         self.port = port
         # public keys
         self.clients_pubkey = set()
-        self.repo_pubkey = '123'
+
         self.man_pubkey = None
         # list of the addresses
         self.address_client = []
@@ -49,6 +63,14 @@ class Repository():
     # server and client exchange public keys
     def start(self):
 
+        if self.certgen.checkExistence(self.name):
+            self.certgen.loadPrivateKeyFromFile(self.privKname, password=self.password)
+        else:
+            self.certgen.writePrivateKeyToFile(self.privKname, password=self.password)
+
+        self.repo_pubkeyb = self.certgen.publicKeyToBytes()
+        self.repo_pubkey = base64.b64encode(self.repo_pubkeyb).decode()
+
         print("Listening...")
 
         self.mylogger.log(INFO, "Exchanging public key with the manager")
@@ -61,12 +83,13 @@ class Repository():
         # save manager public key
         data1 = json.loads(data1)
         if 'man_pubk' in data1:
-            self.man_pubkey = data1['man_pubk']
-        self.mylogger.log(INFO, "Man Pubkey : \n{}".format(data1['man_pubk']))
+            self.man_pubkey = base64.b64decode(data1['man_pubk'].encode())
+        self.mylogger.log(INFO, "Man Pubkey : \n{}".format(self.man_pubkey))
 
         self.mylogger.log(INFO, "Exchanging cert/pubkey with the client")
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
+
         sent = self.sock.sendto(str.encode(msg), client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
@@ -78,7 +101,7 @@ class Repository():
         cert=None
         if 'c_pubk' in message:
             cert = base64.b64decode(message['c_pubk'].encode())
-            print("data 2 : {} \ntype: {} ".format(cert, type(cert)))
+
             self.clients_pubkey.add(cert)
 
         self.mylogger.log(INFO, "Client Pubkey : \n{}".format(cert))
@@ -93,7 +116,8 @@ class Repository():
                 print("Invalid Client Certificate")
                 sys.exit(-1)
 
-        print("hey")
+        print("Client Certificate verified ")
+        self.mylogger.log(INFO, "Verified Client Certificate {}".format(cert))
         self.loggedInClient += 1
         self.pubkey_dict[message['id']] = cert
         self.address_client.append(client_addr)
@@ -202,6 +226,12 @@ class Repository():
                     self.bids_client(addr, data['id'])
                 elif 'outcome' in data['command']:
                     self.outcome_auction(addr, data['serial'])
+
+            if 'exit' in data:
+                self.loggedInClient -= 1
+                if self.loggedInClient == 0:
+                    self.mylogger.log(INFO, "Exiting Repository")
+                    sys.exit(-1)
 
             for auction in self.active_auctions:
                 file = "auction{}.txt".format(auction.serial)

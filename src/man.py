@@ -9,7 +9,8 @@ from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
 from security import GenerateCertificates
 
-from src.cc_interface import PortugueseCitizenCard
+from cc_interface import PortugueseCitizenCard
+
 
 HOST = "127.0.0.1"
 PORT = 8080
@@ -20,12 +21,22 @@ class Manager:
         self.mylogger = LoggyLogglyMcface(name=Manager.__name__)
         self.mylogger.log(INFO, "Entering Manager interface")
 
+        self.name = Manager.__name__
+        self.privKname = "privK" + self.name
+
+        self.password = "1234"
+        self.privateKey = None
+        self.man_pubkey = None
+        self.man_pubkeyb = None
+
+        self.loggedInClient = 0
+
         self.host = host
         self.port = port
         # public keys
         self.clients_pubkey = set()
         self.repo_pubkey = None
-        self.man_pubkey = 'ghi'
+
         # list of addresses
         self.address_client = []
         self.repo_address = None
@@ -44,6 +55,13 @@ class Manager:
 
     # server and client exchange public keys
     def start(self):
+        if self.certgen.checkExistence(self.name):
+            self.certgen.loadPrivateKeyFromFile(self.privKname, password=self.password)
+        else:
+            self.certgen.writePrivateKeyToFile(self.privKname, password=self.password)
+
+        self.man_pubkeyb = self.certgen.publicKeyToBytes()
+        self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
 
         print("Listening...")
 
@@ -54,23 +72,23 @@ class Manager:
         data1, self.repo_address = self.sock.recvfrom(4096)
         self.mylogger.log(INFO, "Repo Pubkey received")
 
+        msg = json.dumps({'man_pubk': self.man_pubkey})
+
+        # save repo public key
+        data1 = json.loads(data1)
+        if 'repo_pubk' in data1:
+            self.repo_pubkey = base64.b64decode(data1['repo_pubk'].encode())
+        self.mylogger.log(INFO, "Repo Pubkey : \n{}".format(self.repo_pubkey))
+
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
-        msg = json.dumps({'man_pubk': self.man_pubkey})
+
         sent = self.sock.sendto(str.encode(msg), client_addr)
-        self.address_client.append(client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
-        # save public keys
-        data1 = json.loads(data1)
-        if 'repo_pubk' in data1:
-            self.repo_pubkey = data1['repo_pubk']
         data2 = json.loads(data2)
-        if 'c_pubk' in data2:
-            self.clients_pubkey.add(data2['c_pubk'])
-
-        self.mylogger.log(INFO, "Repo Pubkey : \n{:s}\nClient Pubkey : \n{:s}".format(data1['repo_pubk'],data2['c_pubk']))
+        self.clientLogin(data2, client_addr)
 
         self.loop()
 
@@ -93,11 +111,11 @@ class Manager:
                 print("Invalid Client Certificate")
                 sys.exit(-1)
 
-        print("hey")
+        print("Client Certificate verified ")
+        self.mylogger.log(INFO, "Verified Client Certificate {}".format(cert))
         self.loggedInClient += 1
         self.pubkey_dict[message['id']] = cert
         self.address_client.append(client_addr)
-
         # save to file
 
     # manager waits for client or repository messages
@@ -110,10 +128,10 @@ class Manager:
             if (addr not in self.address_client) and (addr != self.repo_address):
                 print("> client pubkey received")
                 msg = json.dumps({'man_pubk': self.man_pubkey, 'client_id': self.client_ids, 'signature': 'oi'})
-                self.client_ids = self.client_ids+1
+
                 sent = self.sock.sendto(str.encode(msg), addr)
-                self.address_client.append(addr)
-                self.clients_pubkey.add(data2['c_pubk'])
+                self.loggedInClient(data, addr)
+
 
             if 'auction' in data2:
                 data2['signature'] = 'oi'
@@ -166,7 +184,11 @@ class Manager:
                 # the winner was found and the new blockchain was written to the file
                 msg = json.dumps({'ack': 'ok'})
                 sent = self.sock.sendto(str.encode(msg), self.repo_address)
-
+            if 'exit' in data2:
+                self.loggedInClient -= 1
+                if self.loggedInClient == 0:
+                    self.mylogger.log(INFO, "Exiting Manager")
+                    sys.exit(-1)
 
 if __name__ == "__main__":
     r = Manager(HOST, PORT)
