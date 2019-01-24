@@ -4,11 +4,14 @@ import random
 import string
 from socket import *
 import sys
+import base64
+
 import hashlib
 from datetime import datetime
 
 from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
+from cc_interface import PortugueseCitizenCard
 
 HOST = "127.0.0.1"
 # port client uses to communicate with client
@@ -17,7 +20,7 @@ PORT_REPO = 8081
 
 
 class Client:
-    def __init__(self, host, port_man, port_repo, client_pubkey, name):
+    def __init__(self, host, port_man, port_repo):
 
         self.mylogger = LoggyLogglyMcface(name=Client.__name__)
         self.mylogger.log(INFO, "Entering Client interface")
@@ -26,12 +29,12 @@ class Client:
         self.port_man = port_man
         self.port_repo = port_repo
         # public keys
-        self.client_pubkey = client_pubkey
+        self.client_cert = None
         self.man_pubkey = None
         self.repo_pubkey = None
-        # id and name of the client
+        # id (and name of the client
         self.id = None
-        self.name = name
+        self.name = None
         # addresses of the servers
         self.repo_address = None
         self.man_address = None
@@ -39,19 +42,48 @@ class Client:
         self.sock = socket(AF_INET, SOCK_DGRAM)
         # active auctions
         self.active_auctions = []
+        # portuguese citizen card instance
+        self.cc = PortugueseCitizenCard()
+        self.slot = -1
 
     # servers and client exchange public keys
     def start(self):
 
-        self.mylogger.log(INFO, "Exchanging public Key with the Repo")
-        msg = json.dumps({'c_pubk': self.client_pubkey, 'signature': 'oi'})
+        # ask user which slot to use
+        fullnames = self.cc.getSmartcardsNames()
+
+        slot = -1
+        if len(self.cc.sessions) > 0:
+            temp = ''.join('Slot{:3d}-> Fullname: {:10s}\n'.format(i, fullnames[i]) for i in range(0, len(fullnames)))
+
+            while slot < 0 or slot > len(self.cc.sessions):
+                slot = input("Available Slots: \n{:40s} \n\nWhich Slot do you wish to use? ".format(temp))
+                if slot.isdigit():
+                    slot = int(slot)
+                else:
+                    slot = -1
+            self.slot = slot
+
+        # close sessions for other slots
+        for i in range(0, len(self.cc.sessions)):
+            if slot != i:
+                self.cc.sessions[i].closeSession()
+
+        # get cc certificate - cert (bytes)
+        cert = self.cc.PTEID_GetCertificate(self.slot)
+        self.client_cert=cert
+
+        pubk = base64.b64encode(self.client_cert).decode()
+        self.id = self.cc.certGetSerial()
+        msg = json.dumps({'c_pubk': pubk, 'id': self.id})
+
+        self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Repo")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(4096)
         print("> repository pubkey received")
         self.mylogger.log(INFO, "Repo Pubkey received")
 
-        self.mylogger.log(INFO, "Exchanging public Key with the Manager")
-        msg = json.dumps({'c_pubk': self.client_pubkey, 'signature': 'oi'})
+        self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Manager")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
         data2, server = self.sock.recvfrom(4096)
         print("> manager pubkey received")
@@ -65,11 +97,12 @@ class Client:
         if 'repo_pubk' in data1:
             self.repo_pubkey = data1['repo_pubk']
             self.repo_address = address
+        if 'err' in data1:
+            print("Invalid Certificate")
+            sys.exit(-1)
         if 'man_pubk' in data2:
             self.man_pubkey = data2['man_pubk']
             self.man_address = server
-        if 'client_id' in data2:
-            self.id = data2['client_id']
 
         self.loop()
 
@@ -315,13 +348,7 @@ class Client:
 
 if __name__ == "__main__":
 
-    # get public key from CC
-    publickey = "1234567890"
-
-    # digest public key
-    name = "Ines Lopes"
-
-    c = Client(HOST, PORT_MAN, PORT_REPO, publickey, name)
+    c = Client(HOST, PORT_MAN, PORT_REPO)
 
     try:
         c.start()

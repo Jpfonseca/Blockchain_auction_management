@@ -1,13 +1,14 @@
-import datetime
-import json
-import os
+import os,datetime,sys,json,base64,re
+
 from ast import literal_eval
 from socket import *
 from blockchain import *
-import re
 
 from logging import DEBUG, ERROR, INFO
+
 from log import LoggyLogglyMcface
+from security import GenerateCertificates
+from cc_interface import PortugueseCitizenCard
 
 HOST = "127.0.0.1"
 PORT_MAN = 8080
@@ -17,6 +18,8 @@ class Repository():
     def __init__(self, host, port):
         self.mylogger = LoggyLogglyMcface(name=Repository.__name__)
         self.mylogger.log(INFO, "Entering Repository interface")
+
+        self.loggedInClient=0
 
         self.host = host
         self.port = port
@@ -38,6 +41,10 @@ class Repository():
         self.serial = 0
         # hash of the previous block (auction serial, previous hash)
         self.hash_prev = {'1': '0'}
+        # generate public and private key
+        self.certgen = GenerateCertificates()
+        # dictionary of 'id' and public key
+        self.pubkey_dict = {}
 
     # server and client exchange public keys
     def start(self):
@@ -51,28 +58,53 @@ class Repository():
         sent = self.sock.sendto(str.encode(msg), self.manager_address)
         self.mylogger.log(INFO, "Manager Pubkey received")
 
-        self.mylogger.log(INFO, "Exchanging public key with the client")
-        data2, client_addr = self.sock.recvfrom(4096)
-        print("> client pubkey received")
-        sent = self.sock.sendto(str.encode(msg), client_addr)
-        self.address_client.append(client_addr)
-        self.mylogger.log(INFO, "Client Pubkey received")
-
-        # save public keys
+        # save manager public key
         data1 = json.loads(data1)
         if 'man_pubk' in data1:
             self.man_pubkey = data1['man_pubk']
+        self.mylogger.log(INFO, "Man Pubkey : \n{}".format(data1['man_pubk']))
+
+        self.mylogger.log(INFO, "Exchanging cert/pubkey with the client")
+        data2, client_addr = self.sock.recvfrom(4096)
+        print("> client pubkey received")
+        sent = self.sock.sendto(str.encode(msg), client_addr)
+        self.mylogger.log(INFO, "Client Pubkey received")
+
         data2 = json.loads(data2)
-        if 'c_pubk' in data2:
-            self.clients_pubkey.add(data2['c_pubk'])
-
-        self.mylogger.log(INFO, "Repo Pubkey : \n{}\nClient Pubkey : \n{}".format(data1['man_pubk'],data2['c_pubk']))
-
+        self.clientLogin(data2,client_addr)
         self.loop()
+
+    def clientLogin(self,message,client_addr):
+        cert=None
+        if 'c_pubk' in message:
+            cert = base64.b64decode(message['c_pubk'].encode())
+            print("data 2 : {} \ntype: {} ".format(cert, type(cert)))
+            self.clients_pubkey.add(cert)
+
+        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(cert))
+        cc=PortugueseCitizenCard()
+        verified = cc.verifyChainOfTrust(cert)
+
+        if not verified:
+            self.mylogger.log(ERROR, "Invalid Client Certificate {}".format(cert))
+            msg = json.dumps({'err': 'invalid certificate'})
+            sent = self.sock.sendto(str.encode(msg), client_addr)
+            if self.loggedInClient==0:
+                print("Invalid Client Certificate")
+                sys.exit(-1)
+
+        print("hey")
+        self.loggedInClient += 1
+        self.pubkey_dict[message['id']] = cert
+        self.address_client.append(client_addr)
+
+        # save to file
 
     # loop that waits for messages of manager or client
     def loop(self):
         while (True):
+
+            print(self.pubkey_dict)
 
             date_time = datetime.datetime.now()
             for auction in self.active_auctions:
@@ -125,10 +157,11 @@ class Repository():
             # add new client
             if (addr not in self.address_client) and (addr != self.manager_address):
                 print("> client pubkey received")
-                msg = json.dumps({'repo_pubk': self.repo_pubkey, 'signature': 'oi'})
+                msg = json.dumps({'repo_pubk': self.repo_pubkey})
+
                 sent = self.sock.sendto(str.encode(msg), addr)
-                self.address_client.append(addr)
-                self.clients_pubkey.add(data['c_pubk'])
+
+                self.loggedInClient(data,addr)
 
             if 'auction' in data:
                 if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):

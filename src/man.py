@@ -1,10 +1,15 @@
+import base64
 import json
+import sys
 from socket import *
 from blockchain import *
 from ast import literal_eval
 
 from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
+from security import GenerateCertificates
+
+from src.cc_interface import PortugueseCitizenCard
 
 HOST = "127.0.0.1"
 PORT = 8080
@@ -32,7 +37,10 @@ class Manager:
         self.sock.bind((self.host, self.port))
         # current client being served
         self.current_client = None
-        self.client_ids = 1
+        # generate public and private key
+        self.certgen = GenerateCertificates()
+        # dictionary of 'id' and public key
+        self.pubkey_dict = {}
 
     # server and client exchange public keys
     def start(self):
@@ -40,7 +48,7 @@ class Manager:
         print("Listening...")
 
         self.mylogger.log(INFO, "Exchanging public Key with the Repo")
-        msg = json.dumps({'man_pubk':self.man_pubkey, 'signature': 'oi'})
+        msg = json.dumps({'man_pubk':self.man_pubkey})
         sent = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
         print("> repository pubkey received")
         data1, self.repo_address = self.sock.recvfrom(4096)
@@ -49,8 +57,7 @@ class Manager:
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
         data2, client_addr = self.sock.recvfrom(4096)
         print("> client pubkey received")
-        msg = json.dumps({'man_pubk': self.man_pubkey, 'client_id': '{}'.format(self.client_ids), 'signature': 'oi'})
-        self.client_ids = self.client_ids+1
+        msg = json.dumps({'man_pubk': self.man_pubkey})
         sent = self.sock.sendto(str.encode(msg), client_addr)
         self.address_client.append(client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
@@ -66,6 +73,32 @@ class Manager:
         self.mylogger.log(INFO, "Repo Pubkey : \n{:s}\nClient Pubkey : \n{:s}".format(data1['repo_pubk'],data2['c_pubk']))
 
         self.loop()
+
+    def clientLogin(self, message, client_addr):
+        cert = None
+        if 'c_pubk' in message:
+            cert = base64.b64decode(message['c_pubk'].encode())
+            print("data 2 : {} \ntype: {} ".format(cert, type(cert)))
+            self.clients_pubkey.add(cert)
+
+        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(cert))
+        cc = PortugueseCitizenCard()
+        verified = cc.verifyChainOfTrust(cert)
+
+        if not verified:
+            self.mylogger.log(ERROR, "Invalid Client Certificate {}".format(cert))
+            msg = json.dumps({'err': 'invalid certificate'})
+            sent = self.sock.sendto(str.encode(msg), client_addr)
+            if self.loggedInClient == 0:
+                print("Invalid Client Certificate")
+                sys.exit(-1)
+
+        print("hey")
+        self.loggedInClient += 1
+        self.pubkey_dict[message['id']] = cert
+        self.address_client.append(client_addr)
+
+        # save to file
 
     # manager waits for client or repository messages
     def loop(self):
