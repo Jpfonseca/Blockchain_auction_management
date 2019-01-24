@@ -37,6 +37,8 @@ class PortugueseCitizenCard:
         self.mylogger = LoggyLogglyMcface(name=PortugueseCitizenCard.__name__)
         self.mylogger.log(INFO, "Entering CC interface")
 
+        self.cert=None
+
         rootCerts, trustedCerts, crlList = self._loadPkiCertsAndCrls()
         self.mylogger.log(INFO, "Loaded all Certificates and CRL's")
 
@@ -232,6 +234,16 @@ class PortugueseCitizenCard:
                 names = infos1.split("BI")[1].split("\x0c")
                 return ' '.join(names[i] for i in range(1, len(names)))
 
+    def certGetSerial(self):
+        """
+        Method to return CC serial number
+        :return: int
+        """
+        if not self.cert is None:
+
+            return self.cert.serial
+        return None
+
     def PTEID_GetCertificate(self, slot):
         """
         Method to retreive the CITIZEN AUTHENTICATION CERTIFICATE from a connected CC smartcard
@@ -275,6 +287,7 @@ class PortugueseCitizenCard:
                                       " Certificate for smartcard in the slot:{:2d} loaded:\n {:s}".format(slot,
                                                                                                            cert.decode(
                                                                                                                "utf-8")))
+                    self.cert = x509.load_pem_x509_certificate(cert, default_backend())
                     return cert
 
     def getSmartcardsNames(self):
