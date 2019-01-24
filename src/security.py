@@ -58,6 +58,13 @@ class GenerateCertificates:
 
         self.publicKey = self._getPubkeyFromPrivatekey()
 
+    def checkExistence(self,name):
+        certName = self.certPath + name + self.extension
+
+        for filename in listdir(self.certPath):
+            if certName==filename:
+                return True
+        return False
     def _generatePrivateKey(self):
         """
         This method generates a 4096 bytes private key using the RSA backend
