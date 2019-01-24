@@ -1,6 +1,3 @@
-from OpenSSL.crypto import load_certificate, load_crl, FILETYPE_ASN1, FILETYPE_PEM, Error, X509Store, X509StoreContext, \
-    X509StoreFlags, X509StoreContextError
-
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import Encoding, load_pem_private_key
@@ -240,7 +237,7 @@ class CertificateOperations:
         self.certPath = "./userCerts/"
         self.certExtension = ".pem"
         self.availableCerts = self._loadAllCertsAsDict()
-        return
+        self.cert=None
 
     def _loadAllCertsAsDict(self):
         """
@@ -286,8 +283,13 @@ class CertificateOperations:
         self.mylogger.log(INFO, "The certificate written to {}  was : \n{}\n".format(certname, cert))
         self.availableCerts = self._loadAllCertsAsDict()
 
+    def getCertfromPem(self,cert):
+        self.cert=x509.load_pem_x509_certificate(cert,default_backend())
+
     def getPubKey(self):
-        self.loadAllCertsAsDict()
+        pubk=self.cert.public_key()
+        return pubk
+
 
 
 if __name__ == '__main__':
@@ -327,6 +329,8 @@ if __name__ == '__main__':
            b'\nc2hRgPVJKYzSAKKf6MWaP0AKSlqvLl1PPrXM5dxSOag5EJw/vadCNeDD1refidTq\nc4QiOJZ49NrWGSKm2HFmuj8p0dA+Wu4' \
            b'+O80HHixNF3jEvkGhNt2/9oMttipHWy15\ndWFpclLlS0gTHUHG5Fi4jIf5X7xjKCXpthynPweeRYiP7zqONYpKleapmxqa0b9k' \
            b'\nQTMntd7vkpZ115sapOnb3HIwynmpACIvKgPqSgE1\n-----END CERTIFICATE-----\n '
+    certops.getCertfromPem(cert)
+    print(certops.getPubKey())
     certops.writeToFile(cert, 1)
     r = certops.loadFromFile(1)
     print(r.decode())
