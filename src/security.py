@@ -23,6 +23,18 @@ class GenerateCertificates:
     """
 
     def __init__(self, create=True, name=None, password=None):
+        """
+        This module specifies if we will be creating a new Private Key or if we are loading a existing one.
+        By default it creates a new Private Key
+        :param create:- True(default) - create new Private Key
+                      - False - load Private Key from file
+                      type : boolean
+        :param name:Specifies the name of the file where the Private key is stored, if the load option is selected.
+                    The name doesn't need to have the extension of the file associated
+                    type : String
+        :param password: If the private key was stored using a Rsa encryption with a password
+                        type : String
+        """
         self.mylogger = LoggyLogglyMcface(name=GenerateCertificates.__name__)
         self.mylogger.log(INFO, "Entering GenerateCertificates")
         self.certPath = "./serverCerts/"
@@ -50,6 +62,10 @@ class GenerateCertificates:
         self.publicKey = self._getPubkeyFromPrivatekey()
 
     def _generatePrivateKey(self):
+        """
+        This method generates a 4096 bytes private key using the RSA backend
+        :return: _RSAPrivateKey Object
+        """
         privatekey = rsa.generate_private_key(
             public_exponent=65537,
             key_size=4096,
@@ -58,6 +74,15 @@ class GenerateCertificates:
         return privatekey
 
     def writePrivateKeyToFile(self, name, password=None):
+        """
+        This method will write a private key stored in the variable self.privateKey into a file using the following parameters for the name and encryption
+        :param name: Specifies the name of the file where the Private key is stored, if the load option is selected.
+                    The name doesn't need to have the extension of the file associated
+                    type : String
+        :param password: If the private key was stored using a Rsa encryption with a password
+                        type : String
+        :return:
+        """
         if (password is not None) and isinstance(password, str):
             pemprivateKey = self.privateKey.private_bytes(
                 encoding=serialization.Encoding.PEM,
@@ -76,6 +101,15 @@ class GenerateCertificates:
             f.write(pemprivateKey)
 
     def loadPrivateKeyFromFile(self, name, password=None):
+        """
+        This method will load a Private Key from  a given file into  the variable self.privateKey
+        :param name:Specifies the name of the file where the Private key is stored, if the load option is selected.
+                    The name doesn't need to have the extension of the file associated
+                    type : String
+        :param password:If the private key was stored using a Rsa encryption with a password
+                        type : String
+        :return:
+        """
         certName = self.certPath + name + self.extension
 
         with open(certName, "rb") as keyFile:
@@ -92,11 +126,24 @@ class GenerateCertificates:
                     backend=default_backend()
                 )
         self.privateKey = privateKey
+        self.publicKey =self._getPubkeyFromPrivatekey()
 
     def _getPubkeyFromPrivatekey(self):
+        """
+        This private method will generate a _RSAPublicKey Object from a given  _RSAPrivateKey stored in the variable self.privateKey
+        :return: _RSAPublicKey
+        """
         return self.privateKey.public_key()
 
     def writePublicKeyToFile(self, name):
+        """
+        This method will write a public key stored in the variable self.privateKey into a file using the following
+        parameters for the name of the file.
+        :param name: Specifies the name of the file where the Private key is stored, if the load option is selected.
+                    The name doesn't need to have the extension of the file associated
+                    type : String
+        :return:
+        """
         certName = self.certPath + name + self.extension
 
         with open(certName, 'wb') as f:
@@ -105,7 +152,11 @@ class GenerateCertificates:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ))
 
-    def publicKeyToString(self):
+    def publicKeyToBytes(self):
+        """
+        This method will transform a _RSAPublicKey Object into bytes
+        :return: public bytes of the public key
+        """
         return self.publicKey.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -114,6 +165,15 @@ class GenerateCertificates:
     # Operations over the generated keys
 
     def verifySignature(self, pubk, data, signature):
+        """
+        This method will receive a _RSAPublicKey object and test if the signature provided (bytes) corresponds to the owner of that public key
+        :param pubk: _RSAPublicKey object
+        :param data: data to check
+                    type: string
+        :param signature: signature to verify
+                :type bytes
+        :return:
+        """
         padding = _aspaadding.PKCS1v15()
 
         if not isinstance(pubk, rsa.RSAPublicKey):
@@ -137,6 +197,13 @@ class GenerateCertificates:
             return True
 
     def RSAEncryptData(self,data):
+        """
+        This method will receive a string and encrypt it with the public key stored in the
+        :param data:data to be encrypted
+                    type: string
+        :return: encrypted data
+                type:bytes
+        """
         pubK=self.publicKey
         encryptedData=pubK.encrypt(
             bytes(data.encode()),
@@ -148,6 +215,13 @@ class GenerateCertificates:
         return encryptedData
 
     def RSADecryptData(self,encryptedData):
+        """
+        This method will receive a bytes and decrypt them with the private key stored in the self.privateKey variable
+        :param encryptedData:encrypted data
+                type:bytes
+        :return: original data
+                    type: string
+        """
         privK=self.privateKey
         data=privK.decrypt(
             encryptedData,
@@ -269,7 +343,8 @@ if __name__ == '__main__':
     print(certgen.privateKey)
 
     certgen.writePublicKeyToFile("pubKManager")
-    print(certgen.publicKeyToString())
+    str1=certgen.publicKeyToBytes()
+    print(str1)
 
     encryptedText=certgen.RSAEncryptData("Testing test")
     text=certgen.RSADecryptData(encryptedText)
