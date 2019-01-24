@@ -240,8 +240,7 @@ class PortugueseCitizenCard:
         :return: int
         """
         if not self.cert is None:
-
-            return self.cert.serial
+            return self.cert.serial_number
         return None
 
     def PTEID_GetCertificate(self, slot):
