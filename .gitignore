@@ -1,3 +1,7 @@
+#Project files
+src/log.txt
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
