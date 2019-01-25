@@ -16,8 +16,8 @@ class Block:
         self.serial = serial
         self.hash = hash
         self.hash_prev = hash_prev
-        self.amount = amount
-        self.name = name
+        self.amount = amount  # encrypt
+        self.name = name  # encrypt
         self.id = id
         self.timestamp = timestamp
         self.next = None
@@ -33,7 +33,8 @@ class Block:
 
 class Blockchain:
 
-    def __init__(self, serial=None, timestamp=None, name=None, time_limit=None, description=None, type=None, bidders=None,
+    def __init__(self, serial=None, id=None, timestamp=None, name=None, time_limit=None, description=None, type=None,
+                 bidders=None,
                  limit_bids=None, state=None, winner=None, winner_amount=None):
 
         self.mylogger = LoggyLogglyMcface(name=Blockchain.__name__)
@@ -42,6 +43,7 @@ class Blockchain:
         self.head_block = None
         self.tail_block = None
         self.serial = serial
+        self.id = id
         self.timestamp = timestamp
         self.name = name
         self.time_limit = time_limit
@@ -53,7 +55,8 @@ class Blockchain:
         self.winner = winner
         self.winner_amount = winner_amount
 
-        self.blockchain_dict = {'serial': serial, 'timestamp': timestamp, 'name': name, 'time-limit': time_limit,
+        self.blockchain_dict = {'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
+                                'time-limit': time_limit,
                                 'description': description, 'type': type, 'bidders': bidders, 'limit_bids': limit_bids,
                                 'state': state, 'winner': winner, 'winner_amount': winner_amount}
 

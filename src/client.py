@@ -2,8 +2,14 @@ import json, random, string, sys, base64, datetime
 from socket import *
 
 from logging import DEBUG, ERROR, INFO
+
 from log import LoggyLogglyMcface
 from cc_interface import PortugueseCitizenCard
+from security import CertificateOperations, CryptoUtils
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.backends import default_backend
+from cryptography.fernet import Fernet
 
 HOST = "127.0.0.1"
 # port client uses to communicate with client
@@ -20,10 +26,16 @@ class Client:
         self.host = host
         self.port_man = port_man
         self.port_repo = port_repo
+
         # public keys
         self.client_cert = None
+        self.client_pubk = None
         self.man_pubkey = None
         self.repo_pubkey = None
+
+        # auctionkey
+        self.auctionKey = None
+
         # id (and name of the client
         self.id = None
         self.name = None
@@ -36,6 +48,7 @@ class Client:
         self.active_auctions = []
         # portuguese citizen card instance
         self.cc = PortugueseCitizenCard()
+        self.crypto = CryptoUtils()
         self.slot = -1
 
     # servers and client exchange public keys
@@ -62,21 +75,34 @@ class Client:
 
         # get cc certificate (bytes)
         cert = self.cc.PTEID_GetCertificate(self.slot)
-        self.client_cert=cert
+        self.client_cert = cert
 
-        pubk = base64.b64encode(self.client_cert).decode()
-        self.id = self.cc.certGetSerial()
-        msg = json.dumps({'c_pubk': pubk, 'id': self.id})
+        digest = hashes.Hash(hashes.MD5(), backend=default_backend())
+        digest.update(self.cc.PTEID_GetBI(slot).encode())
+        self.id = base64.b64encode(digest.finalize()).decode()
+
+        self.mylogger.log(INFO, "Client Digest : {} \n Client ID: {}".format(self.digest, self.id))
+
+        # get pubk from cert
+        certop = CertificateOperations()
+        certop.getCertfromPem(cert)
+        self.client_pubk = certop.getPubKey().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        pubk = base64.b64encode(self.client_pubk).decode()
 
         # send client certificate and id to repository
-        self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Repo")
+        msg = json.dumps({'c_pubk': pubk, 'id': self.id})
+        self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(4096)
         print("> repository pubkey received")
         self.mylogger.log(INFO, "Repo Pubkey received")
 
         # send client certificate and id to manager
-        self.mylogger.log(INFO, "Exchanging certificate/pubkey with the Manager")
+        self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
         data2, server = self.sock.recvfrom(4096)
         print("> manager pubkey received")
@@ -99,7 +125,7 @@ class Client:
         if 'man_pubk' in data2:
             self.man_address = server
 
-        self.mylogger.log(INFO,"Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
+        self.mylogger.log(INFO, "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
         self.loop()
 
     # menu of the client
@@ -134,7 +160,7 @@ class Client:
                 msg = json.dumps({'exit': 'client exit'})
                 sent = self.sock.sendto(str.encode(msg), self.man_address)
                 sent = self.sock.sendto(str.encode(msg), self.repo_address)
-                #remove files
+                # remove files
                 self.mylogger.log(INFO, "Exiting Client")
 
                 sys.exit()
@@ -146,32 +172,48 @@ class Client:
         self.mylogger.log(INFO, "Creating auction")
         try:
             name = input("Name: ")
-            time_limit = input("Time limit: ") #format: 0h0m30s
+            time_limit = input("Time limit: ")  # format: 0h0m30s
             description = input("Description: ")
             type_auction = input("Type of auction (e/s):")
             bidders = input("Bidders ids:")
             limit_bids = input("Limit of bids:")
 
             date_time = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+            if self.auctionKey is None:
+                self.auctionKey = Fernet.generate_key()
+            f = Fernet(self.auctionKey)
+            cert = base64.b64encode(self.client_cert).decode()
+
+            encryptedSymCert = base64.b64encode(f.encrypt(cert)).decode()
+            encryptedSymKey = base64.b64encode(self.crypto.RSAEncryptData(self.man_pubkey, self.auctionKey)).decode()
 
             if bidders and not limit_bids:
-                msg = json.dumps({'auction': {'serial': None, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
-                                              'description': description, 'type': type_auction, 'bidders': bidders},
-                                  'signature': 'oi'})
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction, 'bidders': bidders}}}
             elif limit_bids and not bidders:
-                msg = json.dumps({'auction': {'serial': None, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                               'time-limit': time_limit,
                                               'description': description, 'type': type_auction,
-                                              'limit_bids': limit_bids},
-                                  'signature': 'oi'})
+                                               'limit_bids': limit_bids}}}
             elif bidders and limit_bids:
-                msg = json.dumps({'auction': {'serial': None, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                               'time-limit': time_limit,
                                               'description': description, 'type': type_auction, 'bidders': bidders,
-                                              'limit_bids': limit_bids},
-                                  'signature': 'oi'})
+                                               'limit_bids': limit_bids}}}
             else:
-                msg = json.dumps({'auction': {'serial': None, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
-                                              'description': description, 'type': type_auction},
-                                  'signature': 'oi'})
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction}}}
+
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+
+            msg['signature'] = signature
+            msg = json.dumps(msg)
 
             bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
             data, server = self.sock.recvfrom(4096)
@@ -202,7 +244,7 @@ class Client:
             date_time = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
             # encrypt name
             msg = json.dumps({'bid': {'serial': serial, 'hash': answer, 'amount': amount, 'name': self.name,
-                                      'identity': self.id,'timestamp': date_time}, 'signature': 'oi'})
+                                      'identity': self.id, 'timestamp': date_time}, 'signature': 'oi'})
         else:
             date_time = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
             msg = json.dumps({'bid': {'serial': serial, 'hash': answer, 'amount': amount, 'name': self.name,
@@ -308,13 +350,13 @@ class Client:
         except:
             print("Cannot show bids of auction")
 
-
     def validate_receipt(self):
         print("Validating receipt")
-    #def validate_receipt()
+
+    # def validate_receipt()
 
     def display_client(self):
-        print("Name: {}, Id: {}".format(self.name,self.id))
+        print("Name: {}, Id: {}".format(self.name, self.id))
 
     # generate string with length = size
     def gen_string(self, size):
@@ -357,6 +399,6 @@ if __name__ == "__main__":
         msg = json.dumps({'exit': 'client exit'})
         sent = c.sock.sendto(str.encode(msg), c.man_address)
         sent = c.sock.sendto(str.encode(msg), c.repo_address)
-        self.mylogger.log(INFO, "Exiting Client")
+        c.mylogger.log(INFO, "Exiting Client")
         print("Exiting...")
         c.close()
