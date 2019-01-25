@@ -234,6 +234,38 @@ class PortugueseCitizenCard:
                 names = infos1.split("BI")[1].split("\x0c")
                 return ' '.join(names[i] for i in range(1, len(names)))
 
+    def PTEID_GetBI(self, sessionIdx):
+        """
+        This method gets the Name of the owner of the CC by fetching it from the CKA_SUBJECT field on the present CC session
+
+        :param sessionIdx: index of the slot with a openSession
+        :return: BI number
+        """
+        AUTH_CERT_LABEL = "CITIZEN AUTHENTICATION CERTIFICATE"
+
+        self.mylogger.log(INFO, "Entering PTEID_GetID with PyKCSS session id: {:2d}".format(sessionIdx))
+
+        try:
+            info = self.sessions[sessionIdx].findObjects(template=([(PyKCS11.CKA_LABEL, AUTH_CERT_LABEL),
+                                                                    (PyKCS11.CKA_CLASS, PyKCS11.CKO_CERTIFICATE)]))
+        except PyKCS11Error:
+            self.mylogger.log(ERROR,
+                              "The the smartcard with the id: {:3d} unexpectedly closed the session".format(
+                                  sessionIdx))
+            return None
+        else:
+            try:
+                infos1 = ''.join(chr(c) for c in [c.to_dict()['CKA_SUBJECT'] for c in info][0])
+            except (IndexError, TypeError):
+                self.mylogger.log(ERROR,
+                                  " Certificate \"{:15s}\" not found in PyKCSS session with the id :{:2d}".format(
+                                      AUTH_CERT_LABEL))
+                return None
+            else:
+                bi = infos1.split("BI")[1][:8]
+                return bi
+
+
     def certGetSerial(self):
         """
         Method to return CC serial number
@@ -472,6 +504,7 @@ if __name__ == '__main__':
         for i in range(0, len(pteid.sessions)):
             if slot != i:
                 pteid.sessions[i].closeSession()
+        print(pteid.PTEID_GetBI(slot))
 
         st1r = pteid.PTEID_GetCertificate(slot)
 
