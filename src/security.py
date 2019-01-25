@@ -1,7 +1,7 @@
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import Encoding, load_pem_private_key
-from cryptography.hazmat.primitives.asymmetric import rsa,padding
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding as _aspaadding
 from cryptography.exceptions import *
@@ -58,13 +58,14 @@ class GenerateCertificates:
 
         self.publicKey = self._getPubkeyFromPrivatekey()
 
-    def checkExistence(self,name):
+    def checkExistence(self, name):
         certName = self.certPath + name + self.extension
 
         for filename in listdir(self.certPath):
-            if certName==filename:
+            if certName == filename:
                 return True
         return False
+
     def _generatePrivateKey(self):
         """
         This method generates a 4096 bytes private key using the RSA backend
@@ -130,7 +131,7 @@ class GenerateCertificates:
                     backend=default_backend()
                 )
         self.privateKey = privateKey
-        self.publicKey =self._getPubkeyFromPrivatekey()
+        self.publicKey = self._getPubkeyFromPrivatekey()
 
     def _getPubkeyFromPrivatekey(self):
         """
@@ -166,75 +167,19 @@ class GenerateCertificates:
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
 
-    # Operations over the generated keys
+    def signData(self, data):
+        if isinstance(data, str):
+            data = data.encode()
 
-    def verifySignature(self, pubk, data, signature):
-        """
-        This method will receive a _RSAPublicKey object and test if the signature provided (bytes) corresponds to the owner of that public key
-        :param pubk: _RSAPublicKey object
-        :param data: data to check
-                    type: string
-        :param signature: signature to verify
-                :type bytes
-        :return:
-        """
-        padding = _aspaadding.PKCS1v15()
-
-        if not isinstance(pubk, rsa.RSAPublicKey):
-            self.mylogger.log(ERROR, "The provided certificate doesn't have a RSA public Key")
-            return False
-        try:
-            state = pubk.verify(
-                signature,
-                bytes(data.encode()),
-                padding,
-                hashes.SHA256(),
-            )
-
-        except InvalidSignature as strerror:
-            self.mylogger.log(ERROR, "Invalid Signature %s".format(strerror.__doc__))
-            return False
-        except TypeError:
-            self.mylogger.log(ERROR, "Invalid Signature %s".format(TypeError.__doc__))
-            return False
-        else:
-            return True
-
-    def RSAEncryptData(self,data):
-        """
-        This method will receive a string and encrypt it with the public key stored in the
-        :param data:data to be encrypted
-                    type: string
-        :return: encrypted data
-                type:bytes
-        """
-        pubK=self.publicKey
-        encryptedData=pubK.encrypt(
-            bytes(data.encode()),
-            padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                        algorithm=hashes.SHA256(),
-                        label=None)
-
+        signature = self.privateKey.sign(
+            data,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256
         )
-        return encryptedData
-
-    def RSADecryptData(self,encryptedData):
-        """
-        This method will receive a bytes and decrypt them with the private key stored in the self.privateKey variable
-        :param encryptedData:encrypted data
-                type:bytes
-        :return: original data
-                    type: string
-        """
-        privK=self.privateKey
-        data=privK.decrypt(
-            encryptedData,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None)
-            )
-        return data.decode()
+        return signature
 
 class CertificateOperations:
     def __init__(self):
@@ -244,7 +189,7 @@ class CertificateOperations:
         self.certPath = "./userCerts/"
         self.certExtension = ".pem"
         self.availableCerts = self._loadAllCertsAsDict()
-        self.cert=None
+        self.cert = None
 
     def _loadAllCertsAsDict(self):
         """
@@ -290,13 +235,93 @@ class CertificateOperations:
         self.mylogger.log(INFO, "The certificate written to {}  was : \n{}\n".format(certname, cert))
         self.availableCerts = self._loadAllCertsAsDict()
 
-    def getCertfromPem(self,cert):
-        self.cert=x509.load_pem_x509_certificate(cert,default_backend())
+    def getCertfromPem(self, cert):
+        self.cert = x509.load_pem_x509_certificate(cert, default_backend())
 
     def getPubKey(self):
-        pubk=self.cert.public_key()
+
+        pubk = self.cert.public_key()
         return pubk
 
+
+class CryptoUtils:
+
+    # Operations over the generated keys
+    def loadPubk(self, pubk):
+        if isinstance(pubk, str):
+            pubk = pubk.encode()
+        return serialization.load_pem_public_key(pubk)
+
+    def verifySignature(self, pubk, data, signature):
+        """
+        This method will receive a _RSAPublicKey object and test if the signature provided (bytes) corresponds to the owner of that public key
+        :param pubk: _RSAPublicKey object
+        :param data: data to check
+                    type: string
+        :param signature: signature to verify
+                :type bytes
+        :return:
+        """
+        padding = _aspaadding.PKCS1v15()
+
+        if not isinstance(pubk, rsa.RSAPublicKey):
+            self.mylogger.log(ERROR, "The provided certificate doesn't have a RSA public Key")
+            return False
+        try:
+            state = pubk.verify(
+                signature,
+                bytes(data.encode()),
+                padding,
+                hashes.SHA256(),
+            )
+
+        except InvalidSignature as strerror:
+            self.mylogger.log(ERROR, "Invalid Signature %s".format(strerror.__doc__))
+            return False
+        except TypeError:
+            self.mylogger.log(ERROR, "Invalid Signature %s".format(TypeError.__doc__))
+            return False
+        else:
+            return True
+
+    def RSAEncryptData(self, pubK, data):
+        """
+        This method will receive a string and encrypt it with the public key stored in the
+        :param data:data to be encrypted
+                    type: string
+        :return: encrypted data
+                type:bytes
+        """
+        if isinstance(data, str):
+            data = bytes(data.encode())
+        encryptedData = pubK.encrypt(
+            data,
+            padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                         algorithm=hashes.SHA256(),
+                         label=None)
+
+        )
+        return encryptedData
+
+    def RSADecryptData(self, privK, encryptedData):
+        """
+        This method will receive a bytes and decrypt them with the private key stored in the self.privateKey variable
+        :param encryptedData:encrypted data
+                type:bytes
+        :return: original data
+                    type: bytes
+        """
+        data = privK.decrypt(
+            encryptedData,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None)
+        )
+        """
+            The return value is bytes. Use data.decode() to convert to string
+        """
+        return data
 
 
 if __name__ == '__main__':
@@ -354,9 +379,9 @@ if __name__ == '__main__':
     print(certgen.privateKey)
 
     certgen.writePublicKeyToFile("pubKManager")
-    str1=certgen.publicKeyToBytes()
+    str1 = certgen.publicKeyToBytes()
     print(str1)
 
-    encryptedText=certgen.RSAEncryptData("Testing test")
-    text=certgen.RSADecryptData(encryptedText)
+    encryptedText = certgen.RSAEncryptData("Testing test")
+    text = certgen.RSADecryptData(encryptedText)
     print(text)
