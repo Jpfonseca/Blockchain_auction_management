@@ -174,10 +174,10 @@ class GenerateCertificates:
         signature = self.privateKey.sign(
             data,
             padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256),
+                mgf=padding.MGF1(hashes.SHA256()),
                 salt_length=padding.PSS.MAX_LENGTH
             ),
-            hashes.SHA256
+            hashes.SHA256()
         )
         return signature
 
@@ -243,16 +243,26 @@ class CertificateOperations:
         pubk = self.cert.public_key()
         return pubk
 
+    def rsaPubkToPem(self, pubk):
+        if isinstance(pubk, rsa.RSAPublicKey):
+            return pubk.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+        return None
+
 
 class CryptoUtils:
-
+    def __init__(self):
+        self.mylogger = LoggyLogglyMcface(name=CryptoUtils.__name__)
+        self.mylogger.log(INFO, "Entering CryptoUtils")
     # Operations over the generated keys
     def loadPubk(self, pubk):
         if isinstance(pubk, str):
             pubk = pubk.encode()
-        return serialization.load_pem_public_key(pubk)
+        return serialization.load_pem_public_key(pubk, default_backend())
 
-    def verifySignature(self, pubk, data, signature):
+    def verifySignatureCC(self, pubk, data, signature):
         """
         This method will receive a _RSAPublicKey object and test if the signature provided (bytes) corresponds to the owner of that public key
         :param pubk: _RSAPublicKey object
@@ -265,8 +275,11 @@ class CryptoUtils:
         padding = _aspaadding.PKCS1v15()
 
         if not isinstance(pubk, rsa.RSAPublicKey):
-            self.mylogger.log(ERROR, "The provided certificate doesn't have a RSA public Key")
-            return False
+            if isinstance(pubk, bytes) or isinstance(pubk, str):
+                pubk = self.loadPubk(pubk)
+            else:
+                self.mylogger.log(ERROR, "The provided certificate doesn't have a RSA public Key")
+                return False
         try:
             state = pubk.verify(
                 signature,
@@ -283,6 +296,43 @@ class CryptoUtils:
             return False
         else:
             return True
+
+    def verifySignatureServers(self, pubk, data, signature):
+        """
+        This method will receive a _RSAPublicKey object and test if the signature provided (bytes) corresponds to the owner of that public key
+        :param pubk: _RSAPublicKey object
+        :param data: data to check
+                    type: string
+        :param signature: signature to verify
+                :type bytes
+        :return:
+        """
+        if not isinstance(pubk, rsa.RSAPublicKey):
+            if isinstance(pubk, bytes) or isinstance(pubk, str):
+                pubk = self.loadPubk(pubk)
+            else:
+                self.mylogger.log(ERROR, "The provided certificate doesn't have a RSA public Key")
+                return False
+        try:
+            state = pubk.verify(
+                signature,
+                bytes(data.encode()),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256(),
+            )
+
+        except InvalidSignature as strerror:
+            self.mylogger.log(ERROR, "Invalid Signature %s".format(strerror.__doc__))
+            return False
+        except TypeError:
+            self.mylogger.log(ERROR, "Invalid Signature %s".format(TypeError.__doc__))
+            return False
+        else:
+            return True
+
 
     def RSAEncryptData(self, pubK, data):
         """
