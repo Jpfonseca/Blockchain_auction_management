@@ -100,18 +100,6 @@ class Repository():
 
         self.loop()
 
-    # store client pubk
-    def clientLogin(self,message,client_addr):
-        cert=None
-        if 'c_pubk' in message:
-            pubk = base64.b64decode(message['c_pubk'].encode())
-
-        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(pubk))
-
-        self.loggedInClient += 1
-        self.pubkey_dict[message['id']] = pubk
-        self.address_client.append(client_addr)
-
     # loop that waits for messages of manager or client
     def loop(self):
         while (True):
@@ -176,9 +164,8 @@ class Repository():
                 self.loggedInClient += 1
 
             if 'auction' in data:
-
                 signature = base64.b64decode(data['signature']).encode()
-                auction = base64.b64decode(msg['payload']['auction']).encode()
+                auction = base64.b64decode(data['payload']['auction']).encode()
                 if self.validSignature(self.man_pubkey, auction, signature):
                     data = data['payload']
                     if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
@@ -244,14 +231,18 @@ class Repository():
             self.active_auctions.append(blockchain)
             self.all_auctions.append(blockchain)
 
-            msg = json.dumps({'ack': 'ok', 'info': blockchain.info(), 'signature': 'oi'})
-            sent = self.sock.sendto(str.encode(msg), addr)
+            msg = {'payload': {'ack': 'ok', 'info':'auction', 'id': id}}
+            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            sent = self.sock.sendto(str.encode(json.dumps(msg)), addr)
         except:
             print("> auction creation: NOT OK\n")
-            msg = json.dumps({'ack': 'not ok', 'signature': 'oi'})
-            sent = self.sock.sendto(str.encode(msg), addr)
+            msg = {'payload': {'ack': 'nok', 'info': 'auction', 'id': id}}
+            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            sent = self.sock.sendto(str.encode(json.dumps(msg)), addr)
 
-    # send the size of the hash to be calculated (proof-of-work
+    # send the size of the hash to be calculated (proof-of-work)
     def send_pow(self, address_client, serial):
         type = ""
 
@@ -374,6 +365,18 @@ class Repository():
             return False
         return True
 
+        # store client pubk
+
+    def clientLogin(self, message, client_addr):
+        cert = None
+        if 'c_pubk' in message:
+            pubk = base64.b64decode(message['c_pubk'].encode())
+
+        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(pubk))
+
+        self.loggedInClient += 1
+        self.pubkey_dict[message['id']] = pubk
+        self.address_client.append(client_addr)
 
     def close(self):
         self.sock.close()

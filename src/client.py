@@ -81,7 +81,7 @@ class Client:
         digest.update(self.cc.PTEID_GetBI(slot).encode())
         self.id = base64.b64encode(digest.finalize()).decode()
 
-        self.mylogger.log(INFO, "Client Digest : {} \n Client ID: {}".format(self.digest, self.id))
+        self.mylogger.log(INFO, "Client ID: {}".format(self.id))
 
         # get pubk from cert
         certop = CertificateOperations()
@@ -170,62 +170,67 @@ class Client:
     # send new auction parameters to manager
     def create_auction(self):
         self.mylogger.log(INFO, "Creating auction")
-        try:
-            name = input("Name: ")
-            time_limit = input("Time limit: ")  # format: 0h0m30s
-            description = input("Description: ")
-            type_auction = input("Type of auction (e/s):")
-            bidders = input("Bidders ids:")
-            limit_bids = input("Limit of bids:")
 
-            date_time = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-            if self.auctionKey is None:
-                self.auctionKey = Fernet.generate_key()
-            f = Fernet(self.auctionKey)
-            cert = base64.b64encode(self.client_cert).decode()
+        name = input("Name: ")
+        time_limit = input("Time limit: ")  # format: 0h0m30s
+        description = input("Description: ")
+        type_auction = input("Type of auction (e/s):")
+        bidders = input("Bidders ids:")
+        limit_bids = input("Limit of bids:")
 
-            encryptedSymCert = base64.b64encode(f.encrypt(cert)).decode()
-            encryptedSymKey = base64.b64encode(self.crypto.RSAEncryptData(self.man_pubkey, self.auctionKey)).decode()
+        date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
-            if bidders and not limit_bids:
-                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction, 'bidders': bidders}}}
-            elif limit_bids and not bidders:
-                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                               'time-limit': time_limit,
-                                              'description': description, 'type': type_auction,
-                                               'limit_bids': limit_bids}}}
-            elif bidders and limit_bids:
-                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                               'time-limit': time_limit,
-                                              'description': description, 'type': type_auction, 'bidders': bidders,
-                                               'limit_bids': limit_bids}}}
-            else:
-                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction}}}
+        if self.auctionKey is None:
+            self.auctionKey = Fernet.generate_key()
+        f = Fernet(self.auctionKey)
+        # cert = base64.b64encode(self.client_cert).decode()
+        encryptedSymCert = base64.b64encode(f.encrypt(self.client_cert)).decode()
+        encryptedSymKey = base64.b64encode(self.crypto.RSAEncryptData(self.man_pubkey, self.auctionKey)).decode()
 
-            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+        print("cheguei aqui 3")
 
-            msg['signature'] = signature
-            msg = json.dumps(msg)
+        print(encryptedSymCert)
+        print("\n")
+        print(encryptedSymKey)
+        if bidders and not limit_bids:
+            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                           'time-limit': time_limit,
+                                           'description': description, 'type': type_auction, 'bidders': bidders}}}
+        elif limit_bids and not bidders:
+            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                           'time-limit': time_limit,
+                                          'description': description, 'type': type_auction,
+                                           'limit_bids': limit_bids}}}
+        elif bidders and limit_bids:
+            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                           'time-limit': time_limit,
+                                          'description': description, 'type': type_auction, 'bidders': bidders,
+                                           'limit_bids': limit_bids}}}
+        else:
+            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
+                                           'time-limit': time_limit,
+                                           'description': description, 'type': type_auction}}}
 
-            bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
-            data, server = self.sock.recvfrom(4096)
-            data = json.loads(data)
+        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 
-            if data['ack'] == 'ok':
-                print("\nNew auction created!")
-                print(data['info'])
-            else:
-                print("The auction was NOT created")
-        except:
-            raise Exception("Cannot contact the manager")
+        msg['signature'] = signature
+        msg = json.dumps(msg)
+
+        bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
+        data, server = self.sock.recvfrom(4096)
+        data = json.loads(data)
+
+        if data['ack'] == 'ok':
+            print("\nNew auction created!")
+            print(data['info'])
+        else:
+            print("The auction was NOT created")
+        #except:
+            #raise Exception("Cannot contact the manager")
 
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):

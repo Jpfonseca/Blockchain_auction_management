@@ -46,12 +46,12 @@ class Manager:
         # socket to be used
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind((self.host, self.port))
-        # current client being served
-        self.current_client = None
         # generate public and private key
         self.certgen = GenerateCertificates()
         self.crypto = CryptoUtils()
         self.cc = PortugueseCitizenCard()
+        # dictionary with id and address
+        self.clients_address = {}
 
     # server and client exchange public keys
     def start(self):
@@ -111,17 +111,19 @@ class Manager:
                 self.createAuction(data2, addr)
 
             if 'ack' in data2:
-                if data2['ack'] == 'ok':
-                    if data2['info'] == 'auction':
+                if data2['payload']['ack'] == 'ok':
+                    if data2['payload']['info'] == 'auction':
                         print("> auction creation: OK")
+                        signature = base64.b64encode(self.certgen.signData(data2['payload'])).decode()
+                        msg['signature'] = signature
+
                     if data2['info'] == 'bid':
                         print("> bid creation: OK")
-                    data2['signature'] = 'oi'
-                    data = json.dumps(data2)
-                    sent = self.sock.sendto(str.encode(data), self.current_client)
 
-                elif data2['ack'] == 'nok':
-                    if data2['info'] == 'auction':
+                    sent = self.sock.sendto(str.encode(json.dumps(msg)), self.clients_address[data2['payload']['id']])
+
+                elif data2['payload']['ack'] == 'nok':
+                    if data2['payload']['info'] == 'auction':
                         print("> auction creation: NOT OK")
                     if data2['info'] == 'bid':
                         print("> bid creation: NOK")
@@ -174,9 +176,10 @@ class Manager:
                     self.mylogger.log(INFO, "Exiting Manager")
                     sys.exit(-1)
 
-    #
     def createAuction(self, msg, addr):
         # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
+
+        self.clients_address[msg['id']] = addr
 
         # extract auction parameters
         auction = msg['payload']['auction']
@@ -213,7 +216,7 @@ class Manager:
                     valid = False
 
         if not valid:
-            bytes = self.sock.sendto(str.encode(message), addr)
+            bytes = self.sock.sendto(str.encode(json.dumps(message)), addr)
         else:
             print("> valid client's signature")
             self.mylogger.log(INFO, "Verified Client Payload :\n{}".format(payload))
@@ -225,11 +228,8 @@ class Manager:
 
             msg['signature'] = signature
 
-            bytes = self.sock.sendto(str.encode(json.dumps({'ack': 'ok'})), addr)
-
             # send: auction + validation of client's certificate + signature
-            sent = self.sock.sendto(str.encode(msg), self.repo_address)
-            self.current_client = addr
+            sent = self.sock.sendto(str.encode(json.dumps(msg)), self.repo_address)
 
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):
