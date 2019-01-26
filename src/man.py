@@ -7,7 +7,7 @@ from ast import literal_eval
 
 from logging import DEBUG, ERROR, INFO
 from log import LoggyLogglyMcface
-from security import GenerateCertificates, CryptoUtils
+from security import *
 
 from cryptography.fernet import Fernet
 from cc_interface import PortugueseCitizenCard
@@ -47,9 +47,12 @@ class Manager:
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind((self.host, self.port))
         # generate public and private key
+
         self.certgen = GenerateCertificates()
         self.crypto = CryptoUtils()
         self.cc = PortugueseCitizenCard()
+        self.certops = CertificateOperations()
+
         # dictionary with id and address
         self.clients_address = {}
 
@@ -61,6 +64,7 @@ class Manager:
         else:
             self.certgen.writePrivateKeyToFile(self.privKname, password=self.password)
 
+        self.privateKey = self.certgen.privateKey
         # get public key of manager and store to global variable
         self.man_pubkeyb = self.certgen.publicKeyToBytes()
         self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
@@ -96,7 +100,7 @@ class Manager:
         # manager waits for client or repository messages
     def loop(self):
         while (True):
-            data, addr = self.sock.recvfrom(4096)
+            data, addr = self.sock.recvfrom(8192)
             data2 = json.loads(data)
 
             # add new client
@@ -107,29 +111,30 @@ class Manager:
                 self.clientLogin(data2, addr)
                 self.loggedInClient += 1
 
-            if 'auction' in data2:
+            if 'auction' in data2['payload']:
                 self.createAuction(data2, addr)
 
-            if 'ack' in data2:
+            if 'ack' in data2['payload']:
                 if data2['payload']['ack'] == 'ok':
                     if data2['payload']['info'] == 'auction':
                         print("> auction creation: OK")
-                        signature = base64.b64encode(self.certgen.signData(data2['payload'])).decode()
-                        msg['signature'] = signature
-
-                    if data2['info'] == 'bid':
+                        signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
+                        data2['signature'] = signature
+                        sent = self.sock.sendto(json.dumps(data2).encode(),
+                                                self.clients_address[data2['payload']['id']])
+                    if data2['payload']['info'] == 'bid':
                         print("> bid creation: OK")
-
-                    sent = self.sock.sendto(str.encode(json.dumps(msg)), self.clients_address[data2['payload']['id']])
 
                 elif data2['payload']['ack'] == 'nok':
                     if data2['payload']['info'] == 'auction':
                         print("> auction creation: NOT OK")
+                        signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
+                        data2['signature'] = signature
+                        sent = self.sock.sendto(json.dumps(data2).encode(),
+                                                self.clients_address[data2['payload']['id']])
+
                     if data2['info'] == 'bid':
                         print("> bid creation: NOK")
-                    data2['signature'] = 'oi'
-                    data = json.dumps(data2)
-                    sent = self.sock.sendto(str.encode(data), self.current_client)
 
             if 'end' in data2:
                 winner_dict = {}
@@ -178,28 +183,29 @@ class Manager:
 
     def createAuction(self, msg, addr):
         # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
-
-        self.clients_address[msg['id']] = addr
+        id = msg['payload']['auction']['id']
+        self.clients_address[id] = addr
 
         # extract auction parameters
         auction = msg['payload']['auction']
 
         # verify client's signature (msg['signature'])
-        pubk = self.pubkey_dict[base64.b64decode(msg['id']).encode()]
+        pubk = self.pubkey_dict[id]
         payload = json.dumps(msg['payload'])
 
-        signature = base64.b64decode(msg['signature']).encode()
+        signature = base64.b64decode(msg['signature'])
 
         # decrypt symmetric key msg['key'] with manager private key
-        encryptedKey = base64.b64decode(msg['payload']['key']).encode()
-        key = self.crypto.RSADecryptData(self, self.privateKey, encryptedKey)
+        encryptedKey = base64.b64decode(msg['payload']['key'])
+        key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
 
         # decrypt client's certificate msg['cert']
         f = Fernet(key)
-        encryptedCert = base64.b64decode(msg['payload']['cert']).encode()
+        encryptedCert = base64.b64decode(msg['payload']['cert'])
         cert = f.decrypt(encryptedCert)
         self.certops.getCertfromPem(cert)
         cert_pubk = self.certops.getPubKey()
+        cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
         # Pem
         message = {'ack': 'nok'}
 
@@ -208,15 +214,20 @@ class Manager:
         if not cert_pubk.decode() == pubk.decode():
             message['info'] = 'diff pubk'
             valid = False
-            if not self.cc.verifyChainOfTrust(cert):
-                message['info'] = 'cc cert not verified'
-                valid = False
-                if not self.crypto.verifySignature(pubk, payload, signature):
-                    message['info'] = 'signature not verified'
-                    valid = False
+        if not self.cc.verifyChainOfTrust(cert):
+            message['info'] = 'cc cert not verified'
+            valid = False
+        if not self.crypto.verifySignatureCC(pubk, payload, signature):
+            message['info'] = 'signature not verified'
+            valid = False
 
         if not valid:
-            bytes = self.sock.sendto(str.encode(json.dumps(message)), addr)
+
+            signature = self.certgen.signData(json.dumps(message))
+            signature = base64.b64encode(signature).decode()
+            message = {'payload': message, 'signature': signature}
+
+            bytes = self.sock.sendto(json.dumps(message).encode(), addr)
         else:
             print("> valid client's signature")
             self.mylogger.log(INFO, "Verified Client Payload :\n{}".format(payload))
@@ -224,12 +235,13 @@ class Manager:
             auction = msg['payload']['auction']
             msg = {'payload': {'auction': auction, 'valid': valid}}
 
-            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+            signature = self.certgen.signData(json.dumps(msg['payload']))
+            signature = base64.b64encode(signature).decode()
 
             msg['signature'] = signature
 
             # send: auction + validation of client's certificate + signature
-            sent = self.sock.sendto(str.encode(json.dumps(msg)), self.repo_address)
+            sent = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):
@@ -254,6 +266,13 @@ class Manager:
         self.loggedInClient += 1
         self.pubkey_dict[message['id']] = pubk
         self.address_client.append(client_addr)
+
+    def validSignature(self, pubk, message, signature):
+        pubk = self.crypto.loadPubk(pubk)
+        if not self.crypto.verifySignatureServers(pubk, message, signature):
+            return False
+        return True
+
 
 if __name__ == "__main__":
     r = Manager(HOST, PORT)

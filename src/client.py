@@ -169,68 +169,82 @@ class Client:
 
     # send new auction parameters to manager
     def create_auction(self):
-        self.mylogger.log(INFO, "Creating auction")
+        try:
+            self.mylogger.log(INFO, "Creating auction")
 
-        name = input("Name: ")
-        time_limit = input("Time limit: ")  # format: 0h0m30s
-        description = input("Description: ")
-        type_auction = input("Type of auction (e/s):")
-        bidders = input("Bidders ids:")
-        limit_bids = input("Limit of bids:")
+            name = input("Name: ")
+            time_limit = input("Time limit: ")  # format: 0h0m30s
+            description = input("Description: ")
+            type_auction = input("Type of auction (e/s):")
+            bidders = input("Bidders ids:")
+            limit_bids = input("Limit of bids:")
 
-        date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+            date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
-        if self.auctionKey is None:
-            self.auctionKey = Fernet.generate_key()
-        f = Fernet(self.auctionKey)
-        # cert = base64.b64encode(self.client_cert).decode()
-        encryptedSymCert = base64.b64encode(f.encrypt(self.client_cert)).decode()
-        encryptedSymKey = base64.b64encode(self.crypto.RSAEncryptData(self.man_pubkey, self.auctionKey)).decode()
+            if self.auctionKey is None:
+                self.auctionKey = Fernet.generate_key()
+            f = Fernet(self.auctionKey)
+            # cert = base64.b64encode(self.client_cert).decode()
+            encryptedSymCert = base64.b64encode(f.encrypt(self.client_cert)).decode()
+            encryptedSymKey = base64.b64encode(
+                self.crypto.RSAEncryptData(self.crypto.loadPubk(self.man_pubkey), self.auctionKey)).decode()
 
-        print("cheguei aqui 3")
+            if bidders and not limit_bids:
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction, 'bidders': bidders}}}
+            elif limit_bids and not bidders:
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction,
+                                               'limit_bids': limit_bids}}}
+            elif bidders and limit_bids:
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction, 'bidders': bidders,
+                                               'limit_bids': limit_bids}}}
+            else:
+                msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
+                                   'auction': {'serial': None, 'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction}}}
 
-        print(encryptedSymCert)
-        print("\n")
-        print(encryptedSymKey)
-        if bidders and not limit_bids:
-            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                           'time-limit': time_limit,
-                                           'description': description, 'type': type_auction, 'bidders': bidders}}}
-        elif limit_bids and not bidders:
-            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                           'time-limit': time_limit,
-                                          'description': description, 'type': type_auction,
-                                           'limit_bids': limit_bids}}}
-        elif bidders and limit_bids:
-            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                           'time-limit': time_limit,
-                                          'description': description, 'type': type_auction, 'bidders': bidders,
-                                           'limit_bids': limit_bids}}}
-        else:
-            msg = {'payload': {'key': encryptedSymKey, 'cert': encryptedSymCert,
-                               'auction': {'serial': None, 'id': self.id, 'timestamp': date_time,
-                                           'time-limit': time_limit,
-                                           'description': description, 'type': type_auction}}}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 
-        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            msg = json.dumps(msg)
+            size = sys.getsizeof(str.encode(msg))
+            bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
+            data, server = self.sock.recvfrom(4096)
 
-        msg['signature'] = signature
-        msg = json.dumps(msg)
+            data = json.loads(data)
+            signature = base64.b64decode(data['signature'])
+            ack = json.dumps(data['payload'])
 
-        bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
-        data, server = self.sock.recvfrom(4096)
-        data = json.loads(data)
-
-        if data['ack'] == 'ok':
-            print("\nNew auction created!")
-            print(data['info'])
-        else:
-            print("The auction was NOT created")
-        #except:
-            #raise Exception("Cannot contact the manager")
+            if self.validSignature(self.man_pubkey, ack, signature):
+                if data['payload']['ack'] == 'ok':
+                    print("\nNew auction created!")
+                else:
+                    print("The auction was NOT created. Error: {}".format(data['payload']['info']))
+                    msg = json.dumps({'exit': 'client exit'})
+                    sent = self.sock.sendto(msg.encode(), self.man_address)
+                    sent = self.sock.sendto(msg.encode(), self.repo_address)
+                    c.mylogger.log(INFO, "Exiting Client")
+                    print("Exiting...")
+                    sys.exit(-1)
+            else:
+                print("Manager Pubk not verified")
+                msg = json.dumps({'exit': 'client exit'})
+                sent = self.sock.sendto(msg.encode(), self.man_address)
+                sent = self.sock.sendto(msg.encode(), self.repo_address)
+                c.mylogger.log(INFO, "Exiting Client")
+                print("Exiting...")
+                sys.exit(-1)
+        except:
+            raise Exception("Cannot contact the manager")
 
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):
@@ -387,6 +401,12 @@ class Client:
                 result = True
 
         return solution
+
+    def validSignature(self, pubk, message, signature):
+        pubk = self.crypto.loadPubk(pubk)
+        if not self.crypto.verifySignatureServers(pubk, message, signature):
+            return False
+        return True
 
     # shutdown the socket
     def close(self):

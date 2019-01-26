@@ -8,7 +8,7 @@ from blockchain import *
 from logging import DEBUG, ERROR, INFO
 
 from log import LoggyLogglyMcface
-from security import GenerateCertificates
+from security import *
 from cc_interface import PortugueseCitizenCard
 
 HOST = "127.0.0.1"
@@ -57,6 +57,8 @@ class Repository():
         self.hash_prev = {'1': '0'}
         # generate public and private key
         self.certgen = GenerateCertificates()
+        self.certops = CertificateOperations()
+        self.crypto = CryptoUtils()
         # dictionary of 'id' and public key
         self.pubkey_dict = {}
 
@@ -163,34 +165,41 @@ class Repository():
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
 
-            if 'auction' in data:
-                signature = base64.b64decode(data['signature']).encode()
-                auction = base64.b64decode(data['payload']['auction']).encode()
-                if self.validSignature(self.man_pubkey, auction, signature):
-                    data = data['payload']
-                    if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                        self.create_auction(addr, self.serial + 1, dict['id'], data['auction']['timestamp'],
-                                            data['auction']['name'],
-                                            data['auction']['time-limit'], data['auction']['description'],
-                                            data['auction']['type'], bidders=data['auction']['bidders'],
-                                            limit_bids=data['auction']['limit_bids'])
+            if 'auction' in data['payload']:
+                if data['payload']['valid'] == True:
 
-                    elif ('bidders' in data['auction']) and not ('limit_bids' in data['auction']):
-                        self.create_auction(addr, self.serial + 1, dict['id'], data['auction']['timestamp'],
-                                            data['auction']['name'],
-                                            data['auction']['time-limit'], data['auction']['description'],
-                                            data['auction']['type'], bidders=data['auction']['bidders'])
+                    signature = base64.b64decode(data['signature'])
+                    auction = json.dumps(data['payload'])
 
-                    elif not ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                        self.create_auction(addr, self.serial + 1, dict['id'], data['auction']['timestamp'],
-                                            data['auction']['name'],
-                                            data['auction']['time-limit'], data['auction']['description'],
-                                            data['auction']['type'], limit_bids=data['auction']['limit_bids'])
-                    else:
-                        self.create_auction(addr, self.serial + 1, dict['id'], data['auction']['timestamp'],
-                                            data['auction']['name'],
-                                            data['auction']['time-limit'], data['auction']['description'],
-                                            data['auction']['type'])
+                    if self.validSignature(self.man_pubkey, auction, signature):
+                        data = data['payload']
+                        if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
+                            self.create_auction(addr, self.serial + 1, data['auction']['id'],
+                                                data['auction']['timestamp'],
+                                                data['auction']['name'],
+                                                data['auction']['time-limit'], data['auction']['description'],
+                                                data['auction']['type'], bidders=data['auction']['bidders'],
+                                                limit_bids=data['auction']['limit_bids'])
+
+                        elif ('bidders' in data['auction']) and not ('limit_bids' in data['auction']):
+                            self.create_auction(addr, self.serial + 1, data['auction']['id'],
+                                                data['auction']['timestamp'],
+                                                data['auction']['name'],
+                                                data['auction']['time-limit'], data['auction']['description'],
+                                                data['auction']['type'], bidders=data['auction']['bidders'])
+
+                        elif not ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
+                            self.create_auction(addr, self.serial + 1, data['auction']['id'],
+                                                data['auction']['timestamp'],
+                                                data['auction']['name'],
+                                                data['auction']['time-limit'], data['auction']['description'],
+                                                data['auction']['type'], limit_bids=data['auction']['limit_bids'])
+                        else:
+                            self.create_auction(addr, self.serial + 1, data['auction']['id'],
+                                                data['auction']['timestamp'],
+                                                data['auction']['name'],
+                                                data['auction']['time-limit'], data['auction']['description'],
+                                                data['auction']['type'])
 
             elif 'bid' in data:
                 self.create_bid(addr, data['bid'])
@@ -360,8 +369,8 @@ class Repository():
         print("> checking the validity of the receipt")
 
     def validSignature(self, pubk, message, signature):
-        pubk = self.certops.loadPubk(pubk)
-        if not self.certops.verifySignature(pubk, message, signature):
+        pubk = self.crypto.loadPubk(pubk)
+        if not self.crypto.verifySignatureServers(pubk, message, signature):
             return False
         return True
 
