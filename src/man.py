@@ -17,6 +17,8 @@ HOST = "127.0.0.1"
 PORT = 8080
 PORT_REPO = 8081
 
+MAX_BUFFER_SIZE = 8192
+
 class Manager:
     def __init__(self, host, port):
         self.mylogger = LoggyLogglyMcface(name=Manager.__name__)
@@ -74,9 +76,9 @@ class Manager:
         # 1) exchange public keys with the repository
         self.mylogger.log(INFO, "Exchanging public Key with the Repo")
         msg = json.dumps({'man_pubk': self.man_pubkey})
-        sent = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
+        bytes = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
         print("> repository pubkey received")
-        data1, self.repo_address = self.sock.recvfrom(4096)
+        data1, self.repo_address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         self.mylogger.log(INFO, "Repo Pubkey received")
 
         # store the received repository public key in global variable
@@ -87,9 +89,9 @@ class Manager:
 
         # 2) exchange public key with client
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
-        data2, client_addr = self.sock.recvfrom(4096)
+        data2, client_addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> client pubkey received")
-        sent = self.sock.sendto(str.encode(msg), client_addr)
+        bytes = self.sock.sendto(str.encode(msg), client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
         data2 = json.loads(data2)
@@ -100,14 +102,14 @@ class Manager:
         # manager waits for client or repository messages
     def loop(self):
         while (True):
-            data, addr = self.sock.recvfrom(8192)
+            data, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data2 = json.loads(data)
 
             # add new client
             if (addr not in self.address_client) and (addr != self.repo_address):
                 print("> client pubkey received")
                 msg = json.dumps({'man_pubk': self.man_pubkey})
-                sent = self.sock.sendto(str.encode(msg), addr)
+                bytes = self.sock.sendto(str.encode(msg), addr)
                 self.clientLogin(data2, addr)
                 self.loggedInClient += 1
 
@@ -120,7 +122,7 @@ class Manager:
                         print("> auction creation: OK")
                         signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
                         data2['signature'] = signature
-                        sent = self.sock.sendto(json.dumps(data2).encode(),
+                        bytes = self.sock.sendto(json.dumps(data2).encode(),
                                                 self.clients_address[data2['payload']['id']])
                     if data2['payload']['info'] == 'bid':
                         print("> bid creation: OK")
@@ -130,7 +132,7 @@ class Manager:
                         print("> auction creation: NOT OK")
                         signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
                         data2['signature'] = signature
-                        sent = self.sock.sendto(json.dumps(data2).encode(),
+                        bytes = self.sock.sendto(json.dumps(data2).encode(),
                                                 self.clients_address[data2['payload']['id']])
 
                     if data2['info'] == 'bid':
@@ -174,7 +176,7 @@ class Manager:
 
                 # the winner was found and the new blockchain was written to the file
                 msg = json.dumps({'ack': 'ok'})
-                sent = self.sock.sendto(str.encode(msg), self.repo_address)
+                bytes = self.sock.sendto(str.encode(msg), self.repo_address)
             if 'exit' in data2:
                 self.loggedInClient -= 1
                 if self.loggedInClient == 0:
@@ -222,7 +224,6 @@ class Manager:
             valid = False
 
         if not valid:
-
             signature = self.certgen.signData(json.dumps(message))
             signature = base64.b64encode(signature).decode()
             message = {'payload': message, 'signature': signature}
@@ -241,7 +242,7 @@ class Manager:
             msg['signature'] = signature
 
             # send: auction + validation of client's certificate + signature
-            sent = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):

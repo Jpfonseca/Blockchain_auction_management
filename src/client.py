@@ -16,6 +16,8 @@ HOST = "127.0.0.1"
 PORT_MAN = 8080
 PORT_REPO = 8081
 
+MAX_BUFFER_SIZE = 8192
+
 
 class Client:
     def __init__(self, host, port_man, port_repo):
@@ -97,14 +99,14 @@ class Client:
         msg = json.dumps({'c_pubk': pubk, 'id': self.id})
         self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
-        data1, address = self.sock.recvfrom(4096)
+        data1, address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> repository pubkey received")
         self.mylogger.log(INFO, "Repo Pubkey received")
 
         # send client certificate and id to manager
         self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
-        data2, server = self.sock.recvfrom(4096)
+        data2, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> manager pubkey received")
         self.mylogger.log(INFO, "Manager Pubkey received")
 
@@ -145,7 +147,7 @@ class Client:
             elif option == '3':
                 self.check_receipt()
             elif option == '4':
-                self.list_auctions()
+                self.list_active_auctions()
             elif option == '5':
                 self.list_closed_auctions()
             elif option == '6':
@@ -157,7 +159,7 @@ class Client:
             elif option == '9':
                 self.display_client()
             elif option == '10':
-                msg = json.dumps({'exit': 'client exit'})
+                msg = json.dumps({'payload2':{'exit': 'client exit'}})
                 sent = self.sock.sendto(str.encode(msg), self.man_address)
                 sent = self.sock.sendto(str.encode(msg), self.repo_address)
                 # remove files
@@ -167,7 +169,7 @@ class Client:
             else:
                 print("Not a valid option!\n")
 
-    # send new auction parameters to manager
+    # send new auction parameters to manager - done
     def create_auction(self):
         try:
             self.mylogger.log(INFO, "Creating auction")
@@ -218,7 +220,7 @@ class Client:
             msg = json.dumps(msg)
             size = sys.getsizeof(str.encode(msg))
             bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
-            data, server = self.sock.recvfrom(4096)
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
             data = json.loads(data)
             signature = base64.b64decode(data['signature'])
@@ -229,7 +231,7 @@ class Client:
                     print("\nNew auction created!")
                 else:
                     print("The auction was NOT created. Error: {}".format(data['payload']['info']))
-                    msg = json.dumps({'exit': 'client exit'})
+                    msg = json.dumps({'payload3':{'exit': 'client exit'}})
                     sent = self.sock.sendto(msg.encode(), self.man_address)
                     sent = self.sock.sendto(msg.encode(), self.repo_address)
                     c.mylogger.log(INFO, "Exiting Client")
@@ -237,7 +239,7 @@ class Client:
                     sys.exit(-1)
             else:
                 print("Manager Pubk not verified")
-                msg = json.dumps({'exit': 'client exit'})
+                msg = json.dumps({'payload4':{'exit': 'client exit'}})
                 sent = self.sock.sendto(msg.encode(), self.man_address)
                 sent = self.sock.sendto(msg.encode(), self.repo_address)
                 c.mylogger.log(INFO, "Exiting Client")
@@ -255,7 +257,7 @@ class Client:
         # request bid creation and wait for proof-of-work parameter
         msg = json.dumps({'command': 'bid_request', 'serial': serial, 'signature': 'oi'})
         bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-        data, server = self.sock.recvfrom(4096)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
         data = json.loads(data)
         answer = self.get_pow(data['size'])
 
@@ -270,7 +272,7 @@ class Client:
                                       'identity': self.id, 'timestamp': date_time}, 'signature': 'oi'})
 
         bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-        data, server = self.sock.recvfrom(4096)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
         data = json.loads(data)
 
@@ -285,17 +287,24 @@ class Client:
         self.mylogger.log(INFO, "Checking Receipt ")
         msg = json.dumps({'command': 'check_receipt', 'signature': 'oi'})
         bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-        data, server = self.sock.recvfrom(4096)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
     # list active auctions
-    def list_auctions(self):
+    def list_active_auctions(self):
         try:
-            self.mylogger.log(INFO, "List active auctions ")
-            msg = json.dumps({'command': 'list_open', 'signature': 'oi'})
-            bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-            data, server = self.sock.recvfrom(4096)
+            self.mylogger.log(INFO, "Listing active auctions ")
+            msg = {'command': 'list_open', 'id': self.id}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg))).decode()
+            msg = json.dumps({'payload': msg, 'signature': signature})
+
+            bytes = self.sock.sendto(msg.encode(), self.repo_address)
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
-            print(data)
+
+            if data is not "":
+                print(data)
+            else:
+                print("No active auctions")
         except:
             print("Can't list active auctions")
             self.mylogger.log(INFO, "Can't list active auctions")
@@ -303,10 +312,13 @@ class Client:
     # list closed auctions
     def list_closed_auctions(self):
         try:
-            self.mylogger.log(INFO, "List closed auctions ")
-            msg = json.dumps({'command': 'list_closed', 'signature': 'oi'})
-            bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-            data, server = self.sock.recvfrom(4096)
+            self.mylogger.log(INFO, "Listing closed auctions ")
+            msg = {'command': 'list_closed', 'id': self.id}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg))).decode()
+            msg = json.dumps({'payload': msg, 'signature': signature})
+
+            bytes = self.sock.sendto(msg.encode(), self.repo_address)
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
 
             if data is not "":
@@ -324,7 +336,7 @@ class Client:
 
         bytes = self.sock.sendto(str.encode(msg), self.repo_address)
 
-        data, server = self.sock.recvfrom(4096)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
         data = json.loads(data)
 
         print("\nBids of auction {}:".format(serial))
@@ -344,7 +356,7 @@ class Client:
             if id == self.id:
                 msg = json.dumps({'command': 'bid_client', 'id': id, 'signature': 'oi'})
                 bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-                data, server = self.sock.recvfrom(4096)
+                data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
                 data = json.loads(data)
 
                 print("\nBids of client {}:".format(id))
@@ -357,7 +369,7 @@ class Client:
             else:
                 msg = json.dumps({'command': 'bid_client', 'id': id, 'signature': 'oi'})
                 bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-                data, server = self.sock.recvfrom(4096)
+                data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
                 data = json.loads(data)
 
                 print("\nBids of client {}:\n".format(id))
