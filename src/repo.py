@@ -1,4 +1,4 @@
-import os,datetime,sys,json,base64,re
+import os, datetime, sys, json, base64, re
 
 from os import listdir
 from ast import literal_eval
@@ -17,6 +17,7 @@ PORT_REPO = 8081
 
 MAX_BUFFER_SIZE = 8192
 
+
 class Repository():
 
     def __init__(self, host, port):
@@ -34,8 +35,7 @@ class Repository():
         self.password = "123"
 
         self.repo_pubkey = None
-        self.repo_pubkeyb = None
-        self.loggedInClient=0
+        self.loggedInClient = 0
 
         self.host = host
         self.port = port
@@ -73,8 +73,8 @@ class Repository():
             self.certgen.writePrivateKeyToFile(self.privKname, password=self.password)
 
         # get public key of repository and store to global variable
-        self.repo_pubkeyb = self.certgen.publicKeyToBytes()
-        self.repo_pubkey = base64.b64encode(self.repo_pubkeyb).decode()
+        self.repo_pubkey = self.certgen.publicKeyToBytes()
+        #self.repo_pubkey = base64.b64encode(self.repo_pubkeyb).decode()
 
         print("Listening...")
 
@@ -82,14 +82,14 @@ class Repository():
         self.mylogger.log(INFO, "Exchanging public key with the manager")
         data1, self.manager_address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> manager pubkey received")
-        msg = json.dumps({'repo_pubk': self.repo_pubkey})
+        msg = json.dumps({'repo_pubk': self.repo_pubkey.decode()})
         bytes = self.sock.sendto(str.encode(msg), self.manager_address)
         self.mylogger.log(INFO, "Manager Pubkey received")
 
         # store the received manager public key in a global variable
         data1 = json.loads(data1)
         if 'man_pubk' in data1:
-            self.man_pubkey = base64.b64decode(data1['man_pubk'].encode())
+            self.man_pubkey = data1['man_pubk']
         self.mylogger.log(INFO, "Man Pubkey : \n{}".format(self.man_pubkey))
 
         # 2) exchange public key with client
@@ -100,7 +100,7 @@ class Repository():
         self.mylogger.log(INFO, "Client Pubkey received")
 
         data2 = json.loads(data2)
-        self.clientLogin(data2,client_addr)
+        self.clientLogin(data2, client_addr)
 
         self.loop()
 
@@ -111,10 +111,10 @@ class Repository():
             for auction in self.active_auctions:
                 timestamp_auction = datetime.datetime.strptime(auction.timestamp, '%m/%d/%Y, %H:%M:%S')
                 delta = date_time - timestamp_auction
-                seconds = delta.days*24 * 3600 + delta.seconds
+                seconds = delta.days * 24 * 3600 + delta.seconds
 
                 time_limit = re.findall('\d+', auction.time_limit)
-                time_limit = (int(time_limit[0])*3600) + (int(time_limit[1])*60) + int(time_limit[2])
+                time_limit = (int(time_limit[0]) * 3600) + (int(time_limit[1]) * 60) + int(time_limit[2])
 
                 # alert manager that the auction has ended. It will then calculate the winner
                 if seconds > time_limit:
@@ -143,9 +143,11 @@ class Repository():
                                 blockchain = Blockchain(dict['serial'], dict['id'], dict['timestamp'], dict['name'],
                                                         dict['time-limit'],
                                                         dict['description'], dict['type'], dict['bidders'],
-                                                        dict['limit_bids'], dict['state'], dict['winner'], dict['winner_amount'])
+                                                        dict['limit_bids'], dict['state'], dict['winner'],
+                                                        dict['winner_amount'])
                             else:
-                                block = Block(dict['serial'], dict['hash'], dict['hash_prev'], dict['amount'], dict['name'],
+                                block = Block(dict['serial'], dict['hash'], dict['hash_prev'], dict['amount'],
+                                              dict['name'],
                                               dict['id'], dict['timestamp'])
                                 blockchain.add_block(block)
 
@@ -199,31 +201,31 @@ class Repository():
                                                 data['auction']['time-limit'], data['auction']['description'],
                                                 data['auction']['type'])
 
-            elif 'bid' in data:
+            elif 'bid' in data['payload']:
                 self.create_bid(addr, data['bid'])
 
-            elif 'command' in data:
+            elif 'command' in data['payload']:
                 signature = base64.b64decode(data['signature'])
                 payload = json.dumps(data['payload'])
 
                 data = data['payload']
                 if 'bid_request' in data['command']:
-                    if self.validSignature(self.man_pubkey, payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.send_pow(addr, data['serial'])
                 elif 'list_open' in data['command']:
-                    if self.validSignature(self.pubkey_dict[data['id']], payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.list_open(addr)
                 elif 'list_closed' in data['command']:
-                    if self.validSignature(self.pubkey_dict[data['id']], payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.list_closed(addr)
                 elif 'bid_auction' in data['command']:
-                    if self.validSignature(self.man_pubkey, payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.bids_auction(addr, data['serial'])
                 elif 'check_receipt' in data['command']:
-                    if self.validSignature(self.man_pubkey, payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.check_receipt(addr)
                 elif 'bid_client' in data['command']:
-                    if self.validSignature(self.man_pubkey, payload, signature):
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                         self.bids_client(addr, data['id'])
 
             if 'exit' in data:
@@ -248,13 +250,11 @@ class Repository():
             self.active_auctions.append(blockchain)
             self.all_auctions.append(blockchain)
 
-            print("criei a auction no repo, prova:")
-            print(self.active_auctions)
-            
-            msg = {'payload': {'ack': 'ok', 'info':'auction', 'id': id}}
+            msg = {'payload': {'ack': 'ok', 'info': 'auction', 'id': id}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
             msg['signature'] = signature
             bytes = self.sock.sendto(str.encode(json.dumps(msg)), addr)
+
         except:
             print("> auction creation: NOT OK\n")
             msg = {'payload': {'ack': 'nok', 'info': 'auction', 'id': id}}
@@ -282,7 +282,7 @@ class Repository():
 
                 if self.hash_prev['1'] != '0':
                     block = Block(data['serial'], data['hash'], self.hash_prev[str(auction.serial)], data['amount'],
-                              data['name'], data['identity'], data['timestamp'])
+                                  data['name'], data['identity'], data['timestamp'])
                 else:
                     block = Block(data['serial'], data['hash'], '0', data['amount'],
                                   data['name'], data['identity'], data['timestamp'])
@@ -302,31 +302,45 @@ class Repository():
     # list active auctions
     def list_open(self, address_client):
         try:
-            msg = ""
+            auctions = ""
             for auction in self.active_auctions:
-                msg = msg + str(auction.info()) + "\n"
+                auctions = auctions + str(auction.info()) + "\n"
 
-            signature = base64.b64encode(self.certgen.signData(json.dumps(msg))).decode()
-            msg = {'payload': msg, 'signature': signature}
-            bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
-            print("> sending list of active auctions")
+            if auctions != "":
+                msg = {'payload': auctions}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+                print("> sending list of active auctions")
+            else:
+                msg = {'payload': 'no active auctions'}
+                signature = base64.b64encode(self.certgen.signData(msg['payload'])).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
         except:
-            print("Exception: Can't list active auctions")
+            print("Can't send active auctions")
 
     # list closed auctions
     def list_closed(self, address_client):
         try:
-            msg = ""
+            auctions = ""
             for auction in self.closed_auctions:
-                msg = msg + str(auction.info()) + "\n"
+                auctions = auctions + str(auction.info()) + "\n"
 
-            signature = base64.b64encode(self.certgen.signData(json.dumps(msg))).decode()
-            msg = {'payload': msg, 'signature': signature}
-            bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
-            print("> sending list of closed auctions")
+            if auctions != "":
+                msg = {'payload': auctions}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+                print("> sending list of closed auctions")
+            else:
+                msg = {'payload': 'no closed auctions'}
+                signature = base64.b64encode(self.certgen.signData(msg['payload'])).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
 
         except:
-            print("Exception: Can't list closed auctions")
+            print("Can't send active auctions")
 
     # display all bids of an auction
     def bids_auction(self, address_client, serial):
@@ -342,12 +356,12 @@ class Repository():
             for bid in result:
                 bid_number = "bid_{}".format(i)
                 msg[bid_number] = bid
-                i = i+1
+                i = i + 1
             msg['signature'] = 'oi'
             msg = json.dumps(msg)
 
             bytes = self.sock.sendto(str.encode(msg), address_client)
-            print("\n> sent list of bids of auction {}". format(serial))
+            print("\n> sent list of bids of auction {}".format(serial))
         except:
             print("> can't send list of bids of auction {}".format(serial))
 
@@ -364,7 +378,7 @@ class Repository():
                 for bid in result:
                     bid_number = "bid_{}".format(i)
                     msg[bid_number] = bid
-                    i = i+1
+                    i = i + 1
 
             msg['signature'] = 'oi'
             msg = json.dumps(msg)
@@ -381,6 +395,7 @@ class Repository():
 
     def validSignature(self, pubk, message, signature):
         pubk = self.crypto.loadPubk(pubk)
+
         if not self.crypto.verifySignatureServers(pubk, message, signature):
             return False
         return True
@@ -390,13 +405,10 @@ class Repository():
     def clientLogin(self, message, client_addr):
         cert = None
         if 'c_pubk' in message:
-            pubk = base64.b64decode(message['c_pubk'].encode())
-
-        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(pubk))
-
-        self.loggedInClient += 1
-        self.pubkey_dict[message['id']] = pubk
-        self.address_client.append(client_addr)
+            self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
+            self.loggedInClient += 1
+            self.pubkey_dict[message['id']] = message['c_pubk']
+            self.address_client.append(client_addr)
 
     def close(self):
         self.sock.close()

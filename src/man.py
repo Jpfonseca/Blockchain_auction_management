@@ -30,7 +30,6 @@ class Manager:
         self.password = "1234"
         self.privateKey = None
         self.man_pubkey = None
-        self.man_pubkeyb = None
 
         self.loggedInClient = 0
 
@@ -68,15 +67,15 @@ class Manager:
 
         self.privateKey = self.certgen.privateKey
         # get public key of manager and store to global variable
-        self.man_pubkeyb = self.certgen.publicKeyToBytes()
-        self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
+        self.man_pubkey = self.certgen.publicKeyToBytes()
+        #self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
 
         print("Listening...")
 
         # 1) exchange public keys with the repository
         self.mylogger.log(INFO, "Exchanging public Key with the Repo")
-        msg = json.dumps({'man_pubk': self.man_pubkey})
-        bytes = self.sock.sendto(str.encode(msg), (self.host, PORT_REPO))
+        msg = json.dumps({'man_pubk': self.man_pubkey.decode()})
+        bytes = self.sock.sendto(msg.encode(), (self.host, PORT_REPO))
         print("> repository pubkey received")
         data1, self.repo_address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         self.mylogger.log(INFO, "Repo Pubkey received")
@@ -84,14 +83,14 @@ class Manager:
         # store the received repository public key in global variable
         data1 = json.loads(data1)
         if 'repo_pubk' in data1:
-            self.repo_pubkey = base64.b64decode(data1['repo_pubk'].encode())
+            self.repo_pubkey = data1['repo_pubk']
         self.mylogger.log(INFO, "Repo Pubkey : \n{}".format(self.repo_pubkey))
 
         # 2) exchange public key with client
         self.mylogger.log(INFO, "Exchanging public Key with the Client")
         data2, client_addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> client pubkey received")
-        bytes = self.sock.sendto(str.encode(msg), client_addr)
+        bytes = self.sock.sendto(msg.encode(), client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
         data2 = json.loads(data2)
@@ -213,12 +212,12 @@ class Manager:
 
         valid = True
 
-        if not cert_pubk.decode() == pubk.decode():
+        if not cert_pubk == pubk.encode():
             message['info'] = 'diff pubk'
             valid = False
-        if not self.cc.verifyChainOfTrust(cert):
-            message['info'] = 'cc cert not verified'
-            valid = False
+        #if not self.cc.verifyChainOfTrust(cert):
+            #message['info'] = 'cc cert not verified'
+            #valid = False
         if not self.crypto.verifySignatureCC(pubk, payload, signature):
             message['info'] = 'signature not verified'
             valid = False
@@ -248,25 +247,23 @@ class Manager:
     def clientLogin(self, message, client_addr):
         cert = None
         if 'c_pubk' in message:
-            pubk = base64.b64decode(message['c_pubk'].encode())
+            self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
+            # cc = PortugueseCitizenCard()
+            # verified = cc.verifyChainOfTrust(cert)
 
-        self.mylogger.log(INFO, "Client Pubkey : \n{}".format(pubk))
-        # cc = PortugueseCitizenCard()
-        # verified = cc.verifyChainOfTrust(cert)
-
-        # if not verified:
-        #     self.mylogger.log(ERROR, "Invalid Client Certificate {}".format(cert))
-        #     msg = json.dumps({'err': 'invalid certificate'})
-        #     sent = self.sock.sendto(str.encode(msg), client_addr)
-        #     if self.loggedInClient == 0:
-        #         print("> invalid client certificate")
-        #         sys.exit(-1)
-        #
-        # print("> client certificate verified ")
-        # self.mylogger.log(INFO, "Verified Client Certificate {}".format(cert))
-        self.loggedInClient += 1
-        self.pubkey_dict[message['id']] = pubk
-        self.address_client.append(client_addr)
+            # if not verified:
+            #     self.mylogger.log(ERROR, "Invalid Client Certificate {}".format(cert))
+            #     msg = json.dumps({'err': 'invalid certificate'})
+            #     sent = self.sock.sendto(str.encode(msg), client_addr)
+            #     if self.loggedInClient == 0:
+            #         print("> invalid client certificate")
+            #         sys.exit(-1)
+            #
+            # print("> client certificate verified ")
+            # self.mylogger.log(INFO, "Verified Client Certificate {}".format(cert))
+            self.loggedInClient += 1
+            self.pubkey_dict[message['id']] = message['c_pubk']
+            self.address_client.append(client_addr)
 
     def validSignature(self, pubk, message, signature):
         pubk = self.crypto.loadPubk(pubk)

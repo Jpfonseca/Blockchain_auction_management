@@ -93,10 +93,8 @@ class Client:
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
 
-        pubk = base64.b64encode(self.client_pubk).decode()
-
         # send client certificate and id to repository
-        msg = json.dumps({'c_pubk': pubk, 'id': self.id})
+        msg = json.dumps({'c_pubk': self.client_pubk.decode(), 'id': self.id})
         self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
         bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(MAX_BUFFER_SIZE)
@@ -114,8 +112,10 @@ class Client:
         data2 = json.loads(data2)
 
         # store repository and manager public key in global variable
-        self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
-        self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
+        #self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
+        #self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
+        self.repo_pubkey = data1['repo_pubk']
+        self.man_pubkey = data2['man_pubk']
 
         # the client's certificate is invalid
         if 'err' in data1:
@@ -218,8 +218,8 @@ class Client:
 
             msg['signature'] = signature
             msg = json.dumps(msg)
-            size = sys.getsizeof(str.encode(msg))
-            bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
+            #size = sys.getsizeof(str.encode(msg))
+            bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
             data = json.loads(data)
@@ -291,42 +291,48 @@ class Client:
 
     # list active auctions
     def list_active_auctions(self):
-        try:
-            self.mylogger.log(INFO, "Listing active auctions ")
-            msg = {'command': 'list_open', 'id': self.id}
-            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg))).decode()
-            msg = json.dumps({'payload': msg, 'signature': signature})
+        #try:
+        self.mylogger.log(INFO, "Listing active auctions ")
+        msg = {'payload': {'command': 'list_open', 'id': self.id}}
+        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+        msg['signature'] = signature
 
-            bytes = self.sock.sendto(msg.encode(), self.repo_address)
-            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-            data = json.loads(data)
+        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+        data = json.loads(data)
 
+        signature = base64.b64decode(data['signature'])
+        payload = json.dumps(data['payload'])
+
+        if self.validSignature(self.repo_pubkey, payload, signature):
             if data is not "":
-                print(data)
+                print(data['payload'])
             else:
                 print("No active auctions")
-        except:
-            print("Can't list active auctions")
-            self.mylogger.log(INFO, "Can't list active auctions")
+        #except:
+            #print("Can't list active auctions")
+            #self.mylogger.log(INFO, "Can't list active auctions")
 
     # list closed auctions
     def list_closed_auctions(self):
-        try:
-            self.mylogger.log(INFO, "Listing closed auctions ")
-            msg = {'command': 'list_closed', 'id': self.id}
-            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg))).decode()
-            msg = json.dumps({'payload': msg, 'signature': signature})
 
-            bytes = self.sock.sendto(msg.encode(), self.repo_address)
-            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-            data = json.loads(data)
+        self.mylogger.log(INFO, "Listing closed auctions ")
+        msg = {'payload': {'command': 'list_closed', 'id': self.id}}
+        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+        msg['signature'] = signature
 
+        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+        data = json.loads(data)
+
+        signature = base64.b64decode(data['signature'])
+        payload = json.dumps(data['payload'])
+
+        if self.validSignature(self.repo_pubkey, payload, signature):
             if data is not "":
-                print(data)
+                print(data['payload'])
             else:
                 print("No closed auctions")
-        except:
-            print("Can't list closed auctions!")
 
     # list all bids of an auction
     def bids_auction(self):
@@ -424,7 +430,6 @@ class Client:
     def close(self):
         self.sock.shutdown(socket.SHUT_RDWR)
         self.sock.close()
-
 
 if __name__ == "__main__":
 
