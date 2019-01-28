@@ -107,80 +107,80 @@ class Manager:
             # add new client
             if (addr not in self.address_client) and (addr != self.repo_address):
                 print("> client pubkey received")
-                msg = json.dumps({'man_pubk': self.man_pubkey})
+                msg = json.dumps({'man_pubk': self.man_pubkey.decode()})
                 bytes = self.sock.sendto(str.encode(msg), addr)
                 self.clientLogin(data2, addr)
                 self.loggedInClient += 1
+            else:
+                if 'auction' in data2['payload']:
+                    self.createAuction(data2, addr)
 
-            if 'auction' in data2['payload']:
-                self.createAuction(data2, addr)
+                if 'ack' in data2['payload']:
+                    if data2['payload']['ack'] == 'ok':
+                        if data2['payload']['info'] == 'auction':
+                            print("> auction creation: OK")
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
+                            data2['signature'] = signature
+                            bytes = self.sock.sendto(json.dumps(data2).encode(),
+                                                    self.clients_address[data2['payload']['id']])
+                        if data2['payload']['info'] == 'bid':
+                            print("> bid creation: OK")
 
-            if 'ack' in data2['payload']:
-                if data2['payload']['ack'] == 'ok':
-                    if data2['payload']['info'] == 'auction':
-                        print("> auction creation: OK")
-                        signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
-                        data2['signature'] = signature
-                        bytes = self.sock.sendto(json.dumps(data2).encode(),
-                                                self.clients_address[data2['payload']['id']])
-                    if data2['payload']['info'] == 'bid':
-                        print("> bid creation: OK")
+                    elif data2['payload']['ack'] == 'nok':
+                        if data2['payload']['info'] == 'auction':
+                            print("> auction creation: NOT OK")
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
+                            data2['signature'] = signature
+                            bytes = self.sock.sendto(json.dumps(data2).encode(),
+                                                    self.clients_address[data2['payload']['id']])
 
-                elif data2['payload']['ack'] == 'nok':
-                    if data2['payload']['info'] == 'auction':
-                        print("> auction creation: NOT OK")
-                        signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
-                        data2['signature'] = signature
-                        bytes = self.sock.sendto(json.dumps(data2).encode(),
-                                                self.clients_address[data2['payload']['id']])
+                        if data2['info'] == 'bid':
+                            print("> bid creation: NOK")
 
-                    if data2['info'] == 'bid':
-                        print("> bid creation: NOK")
+                if 'end' in data2:
+                    winner_dict = {}
+                    result = []
 
-            if 'end' in data2:
-                winner_dict = {}
-                result = []
+                    print("> auction ended")
 
-                print("> auction ended")
+                    # load the auction file and calculate the winner
+                    with open(data2['end']) as f:
+                        lines = f.readlines()
 
-                # load the auction file and calculate the winner
-                with open(data2['end']) as f:
-                    lines = f.readlines()
+                    auction = lines.pop(0)
+                    auction_dict = literal_eval(auction)
 
-                auction = lines.pop(0)
-                auction_dict = literal_eval(auction)
+                    for line in lines:
+                        line = line[:-1]
+                        bid = literal_eval(line)
+                        winner_dict[str(bid['id'])] = bid['amount']
 
-                for line in lines:
-                    line = line[:-1]
-                    bid = literal_eval(line)
-                    winner_dict[str(bid['id'])] = bid['amount']
+                        # decrypt bids
 
-                    # decrypt bids
+                    winner = max(zip(winner_dict.values(), winner_dict.keys()))
 
-                winner = max(zip(winner_dict.values(), winner_dict.keys()))
+                    auction_dict['winner'] = winner[1]
+                    auction_dict['winner_amount'] = winner[0]
+                    auction_dict['state'] = 'closed'
 
-                auction_dict['winner'] = winner[1]
-                auction_dict['winner_amount'] = winner[0]
-                auction_dict['state'] = 'closed'
+                    result.append(str(auction_dict))
 
-                result.append(str(auction_dict))
+                    for line in lines:
+                        line = line[:-1]
+                        result.append(line)
 
-                for line in lines:
-                    line = line[:-1]
-                    result.append(line)
+                    with open(data2['end'], 'w') as f:
+                        for line in result:
+                            f.write("%s\n" % line)
 
-                with open(data2['end'], 'w') as f:
-                    for line in result:
-                        f.write("%s\n" % line)
-
-                # the winner was found and the new blockchain was written to the file
-                msg = json.dumps({'ack': 'ok'})
-                bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-            if 'exit' in data2:
-                self.loggedInClient -= 1
-                if self.loggedInClient == 0:
-                    self.mylogger.log(INFO, "Exiting Manager")
-                    sys.exit(-1)
+                    # the winner was found and the new blockchain was written to the file
+                    msg = json.dumps({'ack': 'ok'})
+                    bytes = self.sock.sendto(str.encode(msg), self.repo_address)
+                if 'exit' in data2:
+                    self.loggedInClient -= 1
+                    if self.loggedInClient == 0:
+                        self.mylogger.log(INFO, "Exiting Manager")
+                        sys.exit(-1)
 
     def createAuction(self, msg, addr):
         # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
