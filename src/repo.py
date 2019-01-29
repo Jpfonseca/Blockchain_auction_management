@@ -85,7 +85,7 @@ class Repository():
         data1, self.manager_address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> manager pubkey received")
         msg = json.dumps({'repo_pubk': self.repo_pubkey.decode()})
-        bytes = self.sock.sendto(str.encode(msg), self.manager_address)
+        bytes = self.sock.sendto(msg.encode(), self.manager_address)
         self.mylogger.log(INFO, "Manager Pubkey received")
 
         # store the received manager public key in a global variable
@@ -98,7 +98,7 @@ class Repository():
         self.mylogger.log(INFO, "Exchanging cert/pubkey with the client")
         data2, client_addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> client pubkey received")
-        bytes = self.sock.sendto(str.encode(msg), client_addr)
+        bytes = self.sock.sendto(msg.encode(), client_addr)
         self.mylogger.log(INFO, "Client Pubkey received")
 
         data2 = json.loads(data2)
@@ -128,7 +128,7 @@ class Repository():
                     path = "{}/auctions/{}".format(current_path, file)
 
                     msg = json.dumps({'end': path, 'signature': 'oi'})
-                    bytes = self.sock.sendto(str.encode(msg), self.manager_address)
+                    bytes = self.sock.sendto(msg.encode(), self.manager_address)
                     data, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
                     data = json.loads(data)
 
@@ -164,7 +164,7 @@ class Repository():
             if (addr not in self.address_client) and (addr != self.manager_address):
                 print("> client pubkey received")
                 msg = json.dumps({'repo_pubk': self.repo_pubkey.decode()})
-                bytes = self.sock.sendto(str.encode(msg), addr)
+                bytes = self.sock.sendto(msg.encode(), addr)
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
             else:
@@ -219,12 +219,13 @@ class Repository():
                     elif 'bid_auction' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                             self.bids_auction(addr, data['serial'])
+                    elif 'bid_client' in data['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
+                            self.bids_client(addr, data['c_id'])
                     elif 'check_receipt' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                             self.check_receipt(addr)
-                    elif 'bid_client' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
-                            self.bids_client(addr, data['id'])
+
 
                 if 'exit' in data:
                     self.loggedInClient -= 1
@@ -263,7 +264,7 @@ class Repository():
             msg = {'payload': {'ack': 'nok', 'info': 'auction', 'id': id}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
             msg['signature'] = signature
-            bytes = self.sock.sendto(str.encode(json.dumps(msg)), addr)
+            bytes = self.sock.sendto(json.dumps(msg).encode(), addr)
 
     # send the size of the hash to be calculated (proof-of-work)
     def send_pow(self, address_client, data):
@@ -343,7 +344,7 @@ class Repository():
         try:
             auctions = ""
             for auction in self.active_auctions:
-                auctions = auctions + str(auction.info()) + "\n"
+                auctions = auctions + str(auction.info_user()) + "\n"
 
             if auctions != "":
                 msg = {'payload': auctions}
@@ -352,8 +353,8 @@ class Repository():
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
                 print("> sending list of active auctions")
             else:
-                msg = {'payload': 'no active auctions'}
-                signature = base64.b64encode(self.certgen.signData(msg['payload'])).decode()
+                msg = {'payload': {'ack': 'nok'}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
         except:
@@ -365,7 +366,7 @@ class Repository():
         try:
             auctions = ""
             for auction in self.closed_auctions:
-                auctions = auctions + str(auction.info()) + "\n"
+                auctions = auctions + str(auction.info_user()) + "\n"
 
             if auctions != "":
                 msg = {'payload': auctions}
@@ -374,8 +375,8 @@ class Repository():
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
                 print("> sending list of closed auctions")
             else:
-                msg = {'payload': 'no closed auctions'}
-                signature = base64.b64encode(self.certgen.signData(msg['payload'])).decode()
+                msg = {'payload': {'ack': 'nok'}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
 
@@ -389,43 +390,63 @@ class Repository():
             msg = {}
             i = 0
             result = None
+            auctions_exists = False
 
             for auction in self.all_auctions:
                 if auction.serial == int(serial):
+                    auctions_exists = True
                     result = auction.bids_auction(serial)
 
-            for bid in result:
-                bid_number = "bid_{}".format(i)
-                msg[bid_number] = bid
-                i = i + 1
-            msg['signature'] = 'oi'
-            msg = json.dumps(msg)
-
-            bytes = self.sock.sendto(str.encode(msg), address_client)
-            print("\n> sent list of bids of auction {}".format(serial))
-        except:
-            print("> can't send list of bids of auction {}".format(serial))
-
-    # display all bids sent by a client
-    def bids_client(self, address_client, id):
-        try:
-            msg = {}
-            i = 0
-            result = None
-
-            for auction in self.all_auctions:
-                result = auction.bids_client(id)
-                print(result)
+            if auctions_exists:
                 for bid in result:
                     bid_number = "bid_{}".format(i)
                     msg[bid_number] = bid
                     i = i + 1
 
-            msg['signature'] = 'oi'
-            msg = json.dumps(msg)
+                msg = {'payload': msg}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+                print("\n> sent list of bids of auction {}".format(serial))
+            else:
+                msg = {'payload': {'ack': 'nok'}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
 
-            bytes = self.sock.sendto(str.encode(msg), address_client)
-            print("\n> sent list of bids of client {}".format(id))
+        except:
+            print("> cannot send list of bids of auction {}".format(serial))
+
+    # display all bids sent by a client
+    def bids_client(self, address_client, id):
+        try:
+
+            msg = {}
+            i = 0
+            result = None
+            auctions_exists = False
+
+            for auction in self.all_auctions:
+                if str(auction.id) == id:
+                    client_exists = True
+                    result = auction.bids_client(id)
+
+            if client_exists:
+                for bid in result:
+                    bid_number = "bid_{}".format(i)
+                    msg[bid_number] = bid
+                    i = i + 1
+
+                msg = {'payload': msg}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+                print("\n> sent list of bids of client {}".format(id))
+            else:
+                msg = {'payload': {'ack': 'nok'}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
 
         except:
             print("> can't send list of bids of client {}".format(id))

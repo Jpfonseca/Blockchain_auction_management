@@ -24,13 +24,18 @@ class Block:
         self.next = None
         self.previous = None
 
-        self.block_dict = {'key': key, 'cert': cert, 'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
+        self.block_to_file = {'key': key, 'cert': cert, 'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
                            'amount': amount, 'id': id, 'timestamp': timestamp}
+
+        self.block_to_user = {'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
+                              'amount': amount, 'id': id, 'timestamp': timestamp}
 
     # get info about a bid
     def info(self):
-        return str(self.block_dict)
+        return str(self.block_to_file)
 
+    def info_user(self):
+        return str(self.block_to_user)
 
 class Blockchain:
 
@@ -58,15 +63,24 @@ class Blockchain:
         self.winner = winner
         self.winner_amount = winner_amount
 
-        self.blockchain_dict = {'key': key, 'cert': cert, 'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
+        self.blockchain_to_file = {'key': key, 'cert': cert, 'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
+                                'time-limit': time_limit, 'description': description, 'type': type, 'bidders': bidders,
+                                'limit_bids': limit_bids, 'state': state, 'winner': winner, 'winner_amount': winner_amount}
+
+        self.blockchain_to_user = {'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
                                 'time-limit': time_limit, 'description': description, 'type': type, 'bidders': bidders,
                                 'limit_bids': limit_bids, 'state': state, 'winner': winner, 'winner_amount': winner_amount}
 
     # get info about an auction
     def info(self):
         self.mylogger.log(INFO, "The Blockchain with the serial {} current state is :\n {}".format(self.serial, str(
-            self.blockchain_dict)))
-        return str(self.blockchain_dict)
+            self.blockchain_to_file)))
+        return str(self.blockchain_to_file)
+
+    def info_user(self):
+        self.mylogger.log(INFO, "The Blockchain with the serial {} current state is :\n {}".format(self.serial, str(
+            self.blockchain_to_user)))
+        return str(self.blockchain_to_user)
 
     # return the number of blocks in the blockchain
     def chain_length(self):
@@ -87,7 +101,7 @@ class Blockchain:
 
         while current_block is not None:
             if current_block.id == str(id) or current_block.id == int(id):
-                result.append(current_block.info())
+                result.append(current_block.info_user())
             current_block = current_block.next
 
         return result
@@ -96,11 +110,11 @@ class Blockchain:
     def bids_auction(self, serial):
         result = []
         current_block = self.head_block
-        self.mylogger.log(INFO,"The Blockchain with the serial {} has these Bids:".format(serial))
+        self.mylogger.log(INFO, "The Blockchain with the serial {} has these Bids:".format(serial))
 
         while current_block is not None:
             if current_block.serial == str(serial) or current_block.serial == int(serial):
-                result.append(current_block.info())
+                result.append(current_block.info_user())
             current_block = current_block.next
 
         return result

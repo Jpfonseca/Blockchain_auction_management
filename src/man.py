@@ -58,7 +58,7 @@ class Manager:
         # dictionary of number of bids per bidder in an auction
         self.bid_number = {}
         # dictionary with keys and certs associated with auctioner and bidders
-        self.certs_dic = {}
+        #self.certs_dic = {}
 
     # server and client exchange public keys
     def start(self):
@@ -111,7 +111,7 @@ class Manager:
             if (addr not in self.address_client) and (addr != self.repo_address):
                 print("> client pubkey received")
                 msg = json.dumps({'man_pubk': self.man_pubkey.decode()})
-                bytes = self.sock.sendto(str.encode(msg), addr)
+                bytes = self.sock.sendto(msg.encode(), addr)
                 self.clientLogin(data2, addr)
                 self.loggedInClient += 1
             else:
@@ -188,7 +188,7 @@ class Manager:
 
                     # the winner was found and the new blockchain was written to the file
                     msg = json.dumps({'ack': 'ok'})
-                    bytes = self.sock.sendto(str.encode(msg), self.repo_address)
+                    bytes = self.sock.sendto(msg.encode(), self.repo_address)
                 if 'exit' in data2:
                     self.loggedInClient -= 1
                     if self.loggedInClient == 0:
@@ -307,7 +307,7 @@ class Manager:
             # if not verified:
             #     self.mylogger.log(ERROR, "Invalid Client Certificate {}".format(cert))
             #     msg = json.dumps({'err': 'invalid certificate'})
-            #     sent = self.sock.sendto(str.encode(msg), client_addr)
+            #     sent = self.sock.sendto(msg.encode(), client_addr)
             #     if self.loggedInClient == 0:
             #         print("> invalid client certificate")
             #         sys.exit(-1)

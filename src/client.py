@@ -39,7 +39,7 @@ class Client:
         self.auction_keys = {}
         self.bid_keys = {}
 
-        # id (and name of the client
+        # id (and name of the client)
         self.id = None
         self.name = None
         # addresses of the servers
@@ -97,14 +97,14 @@ class Client:
         # send client certificate and id to repository
         msg = json.dumps({'c_pubk': self.client_pubk.decode(), 'id': self.id})
         self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
-        bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_repo))
+        bytes = self.sock.sendto(msg.encode(), (self.host, self.port_repo))
         data1, address = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> repository pubkey received")
         self.mylogger.log(INFO, "Repo Pubkey received")
 
         # send client certificate and id to manager
         self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
-        bytes = self.sock.sendto(str.encode(msg), (self.host, self.port_man))
+        bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
         data2, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
         print("> manager pubkey received")
         self.mylogger.log(INFO, "Manager Pubkey received")
@@ -161,8 +161,8 @@ class Client:
                 self.display_client()
             elif option == '10':
                 msg = json.dumps({'payload': {'exit': 'client exit'}})
-                sent = self.sock.sendto(str.encode(msg), self.man_address)
-                sent = self.sock.sendto(str.encode(msg), self.repo_address)
+                sent = self.sock.sendto(msg.encode(), self.man_address)
+                sent = self.sock.sendto(msg.encode(), self.repo_address)
                 # remove files
                 self.mylogger.log(INFO, "Exiting Client")
 
@@ -179,8 +179,8 @@ class Client:
             time_limit = input("Time limit: ")  # format: 0h0m30s
             description = input("Description: ")
             type_auction = input("Type of auction (e/s):")
-            bidders = input("Limit to bidders:") # format: 1,2,3...
-            limit_bids = input("Limit bids of a bidder:") # format: 1:2, 2:3
+            bidders = input("Limit to bidders:")  # format: 1,2,3...
+            limit_bids = input("Limit bids of a bidder:")  # format: 1:2, 2:3
 
             date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
@@ -195,27 +195,32 @@ class Client:
 
             if bidders and not limit_bids:
                 msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
+                                               'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
                                                'description': description, 'type': type_auction, 'bidders': bidders}}}
             elif limit_bids and not bidders:
-                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert,'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name,'time-limit': time_limit,
-                                               'description': description, 'type': type_auction, 'limit_bids': limit_bids}}}
+                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
+                                               'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
+                                               'description': description, 'type': type_auction,
+                                               'limit_bids': limit_bids}}}
             elif bidders and limit_bids:
                 msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
+                                               'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
                                                'description': description, 'type': type_auction, 'bidders': bidders,
                                                'limit_bids': limit_bids}}}
             else:
                 msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name, 'time-limit': time_limit,
+                                               'id': self.id, 'timestamp': date_time, 'name': name,
+                                               'time-limit': time_limit,
                                                'description': description, 'type': type_auction}}}
 
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 
             msg['signature'] = signature
             msg = json.dumps(msg)
-            # size = sys.getsizeof(str.encode(msg))
+            # size = sys.getsizeof(msg.encode())
             bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
@@ -292,7 +297,8 @@ class Client:
 
                     if type == 'e':
                         msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'amount': amount,'id': self.id, 'timestamp': date_time}}}
+                                                   'hash': answer, 'amount': amount, 'id': self.id,
+                                                   'timestamp': date_time}}}
 
                         signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
                         msg['signature'] = signature
@@ -300,7 +306,8 @@ class Client:
 
                     elif type == 's':
                         msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'amount': amount, 'id': self.id, 'timestamp': date_time}}}
+                                                   'hash': answer, 'amount': amount, 'id': self.id,
+                                                   'timestamp': date_time}}}
 
                         signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
                         msg['signature'] = signature
@@ -318,7 +325,6 @@ class Client:
                                 self.bid_keys[serial] = {str(answer): bid_key}
                             else:
                                 self.bid_keys[serial][str(answer)] = bid_key
-                            print(self.bid_keys)
                             print("\nBid created successfully")
                         else:
                             print("\nBid not created")
@@ -330,7 +336,7 @@ class Client:
     def check_receipt(self):
         self.mylogger.log(INFO, "Checking Receipt ")
         msg = json.dumps({'command': 'check_receipt', 'signature': 'oi'})
-        bytes = self.sock.sendto(str.encode(msg), self.repo_address)
+        bytes = self.sock.sendto(msg.encode(), self.repo_address)
         data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
     # list active auctions
@@ -349,10 +355,11 @@ class Client:
             payload = json.dumps(data['payload'])
 
             if self.validSignature(self.repo_pubkey, payload, signature):
-                if data is not "":
-                    print(data['payload'])
+                if 'ack' in data['payload']:
+                    if data['payload']['ack'] == 'nok':
+                        print("\nNo active auctions at the moment")
                 else:
-                    print("No active auctions")
+                    print(data['payload'])
         except:
             print("Can't list active auctions")
             self.mylogger.log(INFO, "Can't list active auctions")
@@ -374,10 +381,11 @@ class Client:
             payload = json.dumps(data['payload'])
 
             if self.validSignature(self.repo_pubkey, payload, signature):
-                if data is not "":
-                    print(data['payload'])
+                if 'ack' in data['payload']:
+                    if data['payload']['ack'] == 'nok':
+                        print("\nNo closed auctions at the moment")
                 else:
-                    print("No closed auctions")
+                    print(data['payload'])
         except:
             print("Can't list closed auctions")
             self.mylogger.log(INFO, "Can't list closed auctions")
@@ -385,23 +393,30 @@ class Client:
 
     # list all bids of an auction
     def bids_auction(self):
-        serial = input("Serial number of auction:")
+        try:
+            serial = input("Serial number of auction:")
 
-        msg = {'payload': {'command': 'bid_auction', 'serial': serial}}
+            msg = {'payload': {'command': 'bid_auction', 'serial': serial, 'id': self.id}}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-        bytes = self.sock.sendto(str.encode(msg), self.repo_address)
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            data = json.loads(data)
 
-        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-        data = json.loads(data)
+            signature = base64.b64decode(data['signature'])
+            payload = json.dumps(data['payload'])
 
-        print("\nBids of auction {}:".format(serial))
-
-        if data is not "":
-            for bid in data.keys():
-                if bid != 'signature':
-                    print(data[bid])
-        else:
-            print("Auction has no bids")
+            if self.validSignature(self.repo_pubkey, payload, signature):
+                if 'ack' in data['payload']:
+                    if data['payload']['ack'] == 'nok':
+                        print("Auction has no bids")
+                else:
+                    print("\nBids of auction {}:".format(serial))
+                    for key in data['payload'].keys():
+                        print(data['payload'][key] + "\n")
+        except:
+            print("Cannot list of bids of an auction")
             raise
 
     # list all bids of a client
@@ -409,31 +424,26 @@ class Client:
         try:
             id = input("Id of the client:")
 
-            if id == self.id:
-                msg = json.dumps({'command': 'bid_client', 'id': id, 'signature': 'oi'})
-                bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-                data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-                data = json.loads(data)
+            msg = {'payload': {'command': 'bid_client', 'c_id': id, 'id': self.id}}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-                print("\nBids of client {}:".format(id))
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            data = json.loads(data)
 
-                if data is not "":
-                    for bid in data.keys():
-                        if bid != 'signature':
-                            print(data[bid] + "\n")
+            signature = base64.b64decode(data['signature'])
+            payload = json.dumps(data['payload'])
 
-            else:
-                msg = json.dumps({'command': 'bid_client', 'id': id, 'signature': 'oi'})
-                bytes = self.sock.sendto(str.encode(msg), self.repo_address)
-                data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-                data = json.loads(data)
+            if self.validSignature(self.repo_pubkey, payload, signature):
+                if 'ack' in data['payload']:
+                    if data['payload']['ack'] == 'nok':
+                        print("Client has no bids")
+                else:
+                    print("\nBids of client {}:".format(id))
+                    for key in data['payload'].keys():
+                        print(data['payload'][key] + "\n")
 
-                print("\nBids of client {}:\n".format(id))
-
-                if data is not "":
-                    for bid in data.keys():
-                        if bid != 'signature':
-                            print(data[bid] + "\n")
         except:
             print("Cannot show bids of auction")
             raise
@@ -486,6 +496,7 @@ class Client:
         self.sock.shutdown(socket.SHUT_RDWR)
         self.sock.close()
 
+
 if __name__ == "__main__":
 
     c = Client(HOST, PORT_MAN, PORT_REPO)
@@ -494,8 +505,8 @@ if __name__ == "__main__":
         c.start()
     except KeyboardInterrupt:
         msg = json.dumps({'exit': 'client exit'})
-        sent = c.sock.sendto(str.encode(msg), c.man_address)
-        sent = c.sock.sendto(str.encode(msg), c.repo_address)
+        sent = c.sock.sendto(msg.encode(), c.man_address)
+        sent = c.sock.sendto(msg.encode(), c.repo_address)
         c.mylogger.log(INFO, "Exiting Client")
         print("Exiting...")
         c.close()
