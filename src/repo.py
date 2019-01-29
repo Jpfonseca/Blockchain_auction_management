@@ -46,7 +46,7 @@ class Repository():
         # list of the addresses
         self.address_client = []
         self.manager_address = None
-        # list of active and closed auctions
+        # list of active and closed auctions (blockchain object
         self.active_auctions = []
         self.closed_auctions = []
         self.all_auctions = []
@@ -56,13 +56,15 @@ class Repository():
         # incremental serial number
         self.serial = 0
         # hash of the previous block (auction serial, previous hash)
-        self.hash_prev = {'1': '0'}
+        self.hash_prev = {}
         # generate public and private key
         self.certgen = GenerateCertificates()
         self.certops = CertificateOperations()
         self.crypto = CryptoUtils()
         # dictionary of 'id' and public key
         self.pubkey_dict = {}
+        # auction creator - cert dictionary
+        self.auction_certs = {}
 
     # server and client exchange public keys
     def start(self):
@@ -138,17 +140,17 @@ class Repository():
 
                         blockchain = None
                         for i in range(len(lines)):
-                            dict = literal_eval(lines[i])
+                            lines_dict = literal_eval(lines[i])
                             if i == 0:
-                                blockchain = Blockchain(dict['serial'], dict['id'], dict['timestamp'], dict['name'],
-                                                        dict['time-limit'],
-                                                        dict['description'], dict['type'], dict['bidders'],
-                                                        dict['limit_bids'], dict['state'], dict['winner'],
-                                                        dict['winner_amount'])
+                                blockchain = Blockchain(lines_dict['key'],lines_dict['serial'], lines_dict['id'],
+                                                        lines_dict['timestamp'], lines_dict['name'], lines_dict['time-limit'],
+                                                        lines_dict['description'], lines_dict['type'], lines_dict['bidders'],
+                                                        lines_dict['limit_bids'], lines_dict['state'], lines_dict['winner'],
+                                                        lines_dict['winner_amount'])
                             else:
-                                block = Block(dict['serial'], dict['hash'], dict['hash_prev'], dict['amount'],
-                                              dict['name'],
-                                              dict['id'], dict['timestamp'])
+                                block = Block(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
+                                              lines_dict['hash'], lines_dict['hash_prev'], lines_dict['amount'],
+                                              lines_dict['name'],lines_dict['id'], lines_dict['timestamp'])
                                 blockchain.add_block(block)
 
                         for a in range(len(self.closed_auctions)):
@@ -166,52 +168,48 @@ class Repository():
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
             else:
+                signature = base64.b64decode(data['signature'])
+                payload = json.dumps(data['payload'])
+
                 if 'auction' in data['payload']:
                     if data['payload']['valid']:
-                        signature = base64.b64decode(data['signature'])
-                        auction = json.dumps(data['payload'])
-
-                        if self.validSignature(self.man_pubkey, auction, signature):
+                        if self.validSignature(self.man_pubkey, payload, signature):
                             data = data['payload']
                             if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                                self.create_auction(addr, self.serial + 1, data['auction']['id'],
-                                                    data['auction']['timestamp'],
-                                                    data['auction']['name'],
-                                                    data['auction']['time-limit'], data['auction']['description'],
-                                                    data['auction']['type'], bidders=data['auction']['bidders'],
-                                                    limit_bids=data['auction']['limit_bids'])
+                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
+                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
+                                                    data['auction']['name'], data['auction']['time-limit'],
+                                                    data['auction']['description'], data['auction']['type'],
+                                                    bidders=data['auction']['bidders'], limit_bids=data['auction']['limit_bids'])
 
                             elif ('bidders' in data['auction']) and not ('limit_bids' in data['auction']):
-                                self.create_auction(addr, self.serial + 1, data['auction']['id'],
-                                                    data['auction']['timestamp'],
-                                                    data['auction']['name'],
-                                                    data['auction']['time-limit'], data['auction']['description'],
-                                                    data['auction']['type'], bidders=data['auction']['bidders'])
+                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
+                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
+                                                    data['auction']['name'], data['auction']['time-limit'],
+                                                    data['auction']['description'], data['auction']['type'],
+                                                    bidders=data['auction']['bidders'])
 
                             elif not ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                                self.create_auction(addr, self.serial + 1, data['auction']['id'],
-                                                    data['auction']['timestamp'],
-                                                    data['auction']['name'],
-                                                    data['auction']['time-limit'], data['auction']['description'],
-                                                    data['auction']['type'], limit_bids=data['auction']['limit_bids'])
+                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
+                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
+                                                    data['auction']['name'], data['auction']['time-limit'],
+                                                    data['auction']['description'], data['auction']['type'],
+                                                    limit_bids=data['auction']['limit_bids'])
                             else:
-                                self.create_auction(addr, self.serial + 1, data['auction']['id'],
-                                                    data['auction']['timestamp'],
-                                                    data['auction']['name'],
-                                                    data['auction']['time-limit'], data['auction']['description'],
-                                                    data['auction']['type'])
+                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
+                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
+                                                    data['auction']['name'], data['auction']['time-limit'],
+                                                    data['auction']['description'], data['auction']['type'])
 
                 elif 'bid' in data['payload']:
-                    self.create_bid(addr, data['bid'])
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['bid']['id']], payload, signature):
+                        self.create_bid(addr, data['payload']['bid'])
 
                 elif 'command' in data['payload']:
-                    signature = base64.b64decode(data['signature'])
-                    payload = json.dumps(data['payload'])
-
                     data = data['payload']
                     if 'bid_request' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
-                            self.send_pow(addr, data['serial'])
+                            self.send_pow(addr, data)
                     elif 'list_open' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                             self.list_open(addr)
@@ -239,10 +237,10 @@ class Repository():
                     auction.save_to_file(file)
 
     # create an auction according to the client's requested parameters
-    def create_auction(self, addr, serial, id, timestamp, name, timelimit, description, type, bidders=None,
+    def create_auction(self, addr, key, cert, serial, id, timestamp, name, timelimit, description, type, bidders=None,
                        limit_bids=None):
         try:
-            blockchain = Blockchain(serial, id, timestamp, name, timelimit, description, type, bidders, limit_bids,
+            blockchain = Blockchain(key, cert, serial, id, timestamp, name, timelimit, description, type, bidders, limit_bids,
                                     state='active')
             self.serial = self.serial + 1
 
@@ -250,10 +248,15 @@ class Repository():
             self.active_auctions.append(blockchain)
             self.all_auctions.append(blockchain)
 
-            msg = {'payload': {'ack': 'ok', 'info': 'auction', 'id': id}}
+            self.hash_prev[str(serial)] = '0'
+
+            print("aqui está o erro da key 2")
+            print(self.hash_prev)
+
+            msg = {'payload': {'ack': 'ok', 'info': 'auction', 'id': id, 'serial': str(serial)}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
             msg['signature'] = signature
-            bytes = self.sock.sendto(str.encode(json.dumps(msg)), addr)
+            bytes = self.sock.sendto(json.dumps(msg).encode(), addr)
 
         except:
             print("> auction creation: NOT OK\n")
@@ -263,41 +266,77 @@ class Repository():
             bytes = self.sock.sendto(str.encode(json.dumps(msg)), addr)
 
     # send the size of the hash to be calculated (proof-of-work)
-    def send_pow(self, address_client, serial):
-        type = ""
+    def send_pow(self, address_client, data):
+        try:
+            type = ""
+            auction_exists = False
+            # validate bid with API
+            for auction in self.active_auctions:
+                if str(auction.serial) == data['serial']:
+                    type = auction.type
+                    auction_exists = True
 
-        for auction in self.active_auctions:
-            if auction.serial == serial:
-                type = auction['type']
-        msg = json.dumps({'size': '10', 'type': type, 'signature': 'oi'})
-        bytes = self.sock.sendto(str.encode(msg), address_client)
+            if auction_exists is False:
+                msg = {'payload': {'ack': 'nok'}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+            else:
+                msg = {'payload': {'size': '5', 'type': type}}
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+        except:
+            print("Cannot send proof-of-work size")
+            raise
 
     # create a bid in an existent auction
     def create_bid(self, addr, data):
-        auction_exists = False
+        try:
+            client_address = addr
+            print(self.hash_prev)
+            for auction in self.active_auctions:
+                if data['serial'] == str(auction.serial):
+                    block = Block(data['key'], data['cert'], data['serial'], data['hash'], self.hash_prev[data['serial']],
+                                  data['amount'], data['id'], data['timestamp'])
+                    self.hash_prev[data['serial']] = data['hash']
 
-        for auction in self.active_auctions:
-            if data['serial'] == str(auction.serial):
-                auction_exists = True
+                    # send block to manager for validation
+                    msg = {'payload': {'bid_valid': data}}
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), self.manager_address)
 
-                if self.hash_prev['1'] != '0':
-                    block = Block(data['serial'], data['hash'], self.hash_prev[str(auction.serial)], data['amount'],
-                                  data['name'], data['identity'], data['timestamp'])
-                else:
-                    block = Block(data['serial'], data['hash'], '0', data['amount'],
-                                  data['name'], data['identity'], data['timestamp'])
+                    # if manager signature is valid and bid is valid
+                    data2, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
+                    data2 = json.loads(data2)
 
-                auction.add_block(block)
-                print("> bid creation in auction {}: OK".format(auction.serial))
+                    signature = base64.b64decode(data2['signature'])
+                    payload = json.dumps(data2['payload'])
 
-                self.hash_prev[str(auction.serial)] = data['hash']
+                    if self.validSignature(self.man_pubkey, payload, signature):
+                        # if bid is valid according to the manager, the bid is stored
+                        if data2['payload']['valid'] is True:
+                            print("a assinatura e a bid são válidas")
+                            auction.add_block(block)
+                            print("> bid creation in auction {}: OK".format(auction.serial))
 
-                msg = json.dumps({'ack': 'ok', 'info': block.info(), 'signature': 'oi'})
-                bytes = self.sock.sendto(msg.encode(), addr)
+                            self.hash_prev[str(auction.serial)] = data2['payload']['hash']
 
-        if auction_exists is False:
-            msg = json.dumps({'ack': 'not ok'})
-            bytes = self.sock.sendto(msg.encode(), addr)
+                            msg = {'payload': {'ack': 'ok'}}
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                            msg['signature'] = signature
+                            bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
+                        else:
+                            print("> bid creation in auction {}: NOK".format(auction.serial))
+                            msg = {'payload': {'ack': 'nok'}}
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                            msg['signature'] = signature
+                            bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
+
+        except:
+            print("Cannot create bid")
+            raise
 
     # list active auctions
     def list_open(self, address_client):
@@ -319,6 +358,7 @@ class Repository():
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
         except:
             print("Can't send active auctions")
+            raise
 
     # list closed auctions
     def list_closed(self, address_client):
@@ -341,6 +381,7 @@ class Repository():
 
         except:
             print("Can't send active auctions")
+            raise
 
     # display all bids of an auction
     def bids_auction(self, address_client, serial):
@@ -394,21 +435,28 @@ class Repository():
         print("> checking the validity of the receipt")
 
     def validSignature(self, pubk, message, signature):
-        pubk = self.crypto.loadPubk(pubk)
-
-        if not self.crypto.verifySignatureServers(pubk, message, signature):
-            return False
-        return True
+        try:
+            pubk = self.crypto.loadPubk(pubk)
+            if not self.crypto.verifySignatureServers(pubk, message, signature):
+                return False
+            return True
+        except:
+            print("Cannot validate signature")
+            raise
 
         # store client pubk
 
     def clientLogin(self, message, client_addr):
-        cert = None
-        if 'c_pubk' in message:
-            self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
-            self.loggedInClient += 1
-            self.pubkey_dict[message['id']] = message['c_pubk']
-            self.address_client.append(client_addr)
+        try:
+            cert = None
+            if 'c_pubk' in message:
+                self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
+                self.loggedInClient += 1
+                self.pubkey_dict[message['id']] = message['c_pubk']
+                self.address_client.append(client_addr)
+        except:
+            print("Cannot sign up new client")
+            raise
 
     def close(self):
         self.sock.close()

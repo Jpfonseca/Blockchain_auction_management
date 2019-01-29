@@ -9,22 +9,23 @@ from log import LoggyLogglyMcface
 
 class Block:
 
-    def __init__(self, serial=None, hash=None, hash_prev=None, amount=None, name=None, id=None, timestamp=None):
+    def __init__(self, key=None, cert=None, serial=None, hash=None, hash_prev=None, amount=None, id=None, timestamp=None):
         self.mylogger = LoggyLogglyMcface(name=Block.__name__)
         self.mylogger.log(INFO, "Entering Block interface")
 
+        self.key = key
+        self.cert = cert
         self.serial = serial
         self.hash = hash
         self.hash_prev = hash_prev
         self.amount = amount  # encrypt
-        self.name = name  # encrypt
         self.id = id
         self.timestamp = timestamp
         self.next = None
         self.previous = None
 
-        self.block_dict = {'serial': serial, 'hash': hash, 'hash_prev': hash_prev, 'amount': amount, 'name': name, 'id': id,
-                           'timestamp': timestamp}
+        self.block_dict = {'key': key, 'cert': cert, 'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
+                           'amount': amount, 'id': id, 'timestamp': timestamp}
 
     # get info about a bid
     def info(self):
@@ -33,7 +34,7 @@ class Block:
 
 class Blockchain:
 
-    def __init__(self, serial=None, id=None, timestamp=None, name=None, time_limit=None, description=None, type=None,
+    def __init__(self, key=None, cert=None, serial=None, id=None, timestamp=None, name=None, time_limit=None, description=None, type=None,
                  bidders=None,
                  limit_bids=None, state=None, winner=None, winner_amount=None):
 
@@ -42,6 +43,8 @@ class Blockchain:
 
         self.head_block = None
         self.tail_block = None
+        self.key = key
+        self.cert = cert
         self.serial = serial
         self.id = id
         self.timestamp = timestamp
@@ -55,10 +58,9 @@ class Blockchain:
         self.winner = winner
         self.winner_amount = winner_amount
 
-        self.blockchain_dict = {'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
-                                'time-limit': time_limit,
-                                'description': description, 'type': type, 'bidders': bidders, 'limit_bids': limit_bids,
-                                'state': state, 'winner': winner, 'winner_amount': winner_amount}
+        self.blockchain_dict = {'key': key, 'cert': cert, 'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
+                                'time-limit': time_limit, 'description': description, 'type': type, 'bidders': bidders,
+                                'limit_bids': limit_bids, 'state': state, 'winner': winner, 'winner_amount': winner_amount}
 
     # get info about an auction
     def info(self):

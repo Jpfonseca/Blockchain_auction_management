@@ -41,14 +41,13 @@ class Manager:
         # list of addresses
         self.address_client = []
         self.repo_address = None
-        # list of active and closed auctions
+        # list of active and closed auctions (blockchain dictionary)
         self.active_auctions = []
         self.closed_auctions = []
         # socket to be used
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind((self.host, self.port))
         # generate public and private key
-
         self.certgen = GenerateCertificates()
         self.crypto = CryptoUtils()
         self.cc = PortugueseCitizenCard()
@@ -56,6 +55,10 @@ class Manager:
 
         # dictionary with id and address
         self.clients_address = {}
+        # dictionary of number of bids per bidder in an auction
+        self.bid_number = {}
+        # dictionary with keys and certs associated with auctioner and bidders
+        self.certs_dic = {}
 
     # server and client exchange public keys
     def start(self):
@@ -114,26 +117,36 @@ class Manager:
             else:
                 if 'auction' in data2['payload']:
                     self.createAuction(data2, addr)
+                if 'bid_valid' in data2['payload']:
+                    signature = base64.b64decode(data2['signature'])
+                    payload = json.dumps(data2['payload'])
+
+                    if self.validSignature(self.repo_pubkey, payload, signature):
+                        self.validateBid(data2['payload']['bid_valid'], addr)
 
                 if 'ack' in data2['payload']:
                     if data2['payload']['ack'] == 'ok':
+                        # auction was created in repository
                         if data2['payload']['info'] == 'auction':
                             print("> auction creation: OK")
                             signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
+                            self.active_auctions[-1]['serial'] = data2['payload']['serial']
                             data2['signature'] = signature
                             bytes = self.sock.sendto(json.dumps(data2).encode(),
                                                     self.clients_address[data2['payload']['id']])
+                        # bid was created in repository
                         if data2['payload']['info'] == 'bid':
                             print("> bid creation: OK")
 
                     elif data2['payload']['ack'] == 'nok':
+                        # auction was not created on the repository
                         if data2['payload']['info'] == 'auction':
                             print("> auction creation: NOT OK")
                             signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
                             data2['signature'] = signature
                             bytes = self.sock.sendto(json.dumps(data2).encode(),
                                                     self.clients_address[data2['payload']['id']])
-
+                        # bid was not created in the repository
                         if data2['info'] == 'bid':
                             print("> bid creation: NOK")
 
@@ -183,65 +196,105 @@ class Manager:
                         sys.exit(-1)
 
     def createAuction(self, msg, addr):
-        # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
-        id = msg['payload']['auction']['id']
-        self.clients_address[id] = addr
+        try:
+            # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
+            id = msg['payload']['auction']['id']
+            self.clients_address[id] = addr
 
-        # extract auction parameters
-        auction = msg['payload']['auction']
+            self.bid_number[msg['payload']['auction']['serial']] = None
 
-        # verify client's signature (msg['signature'])
-        pubk = self.pubkey_dict[id]
-        payload = json.dumps(msg['payload'])
-
-        signature = base64.b64decode(msg['signature'])
-
-        # decrypt symmetric key msg['key'] with manager private key
-        encryptedKey = base64.b64decode(msg['payload']['key'])
-        key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
-
-        # decrypt client's certificate msg['cert']
-        f = Fernet(key)
-        encryptedCert = base64.b64decode(msg['payload']['cert'])
-        cert = f.decrypt(encryptedCert)
-        self.certops.getCertfromPem(cert)
-        cert_pubk = self.certops.getPubKey()
-        cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
-        # Pem
-        message = {'ack': 'nok'}
-
-        valid = True
-
-        if not cert_pubk == pubk.encode():
-            message['info'] = 'diff pubk'
-            valid = False
-        #if not self.cc.verifyChainOfTrust(cert):
-            #message['info'] = 'cc cert not verified'
-            #valid = False
-        if not self.crypto.verifySignatureCC(pubk, payload, signature):
-            message['info'] = 'signature not verified'
-            valid = False
-
-        if not valid:
-            signature = self.certgen.signData(json.dumps(message))
-            signature = base64.b64encode(signature).decode()
-            message = {'payload': message, 'signature': signature}
-
-            bytes = self.sock.sendto(json.dumps(message).encode(), addr)
-        else:
-            print("> valid client's signature")
-            self.mylogger.log(INFO, "Verified Client Payload :\n{}".format(payload))
-
+            # extract auction parameters
             auction = msg['payload']['auction']
-            msg = {'payload': {'auction': auction, 'valid': valid}}
+            self.active_auctions.append(auction)
+            print("new active auction")
 
-            signature = self.certgen.signData(json.dumps(msg['payload']))
-            signature = base64.b64encode(signature).decode()
+            pubk = self.pubkey_dict[id]
+            payload = json.dumps(msg['payload'])
+            signature = base64.b64decode(msg['signature'])
 
-            msg['signature'] = signature
+            # decrypt symmetric key msg['key'] with manager private key
+            encryptedKey = base64.b64decode(msg['payload']['auction']['key'])
+            key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
 
-            # send: auction + validation of client's certificate + signature
-            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+            # decrypt client's certificate msg['cert']
+            f = Fernet(key)
+            encryptedCert = base64.b64decode(msg['payload']['auction']['cert'])
+            cert = f.decrypt(encryptedCert)
+            self.certops.getCertfromPem(cert)
+            cert_pubk = self.certops.getPubKey()
+            cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
+            # Pem
+            message = {'ack': 'nok'}
+
+            valid = True
+
+            if not cert_pubk == pubk.encode():
+                message['info'] = 'diff pubk'
+                valid = False
+            #if not self.cc.verifyChainOfTrust(cert):
+                #message['info'] = 'cc cert not verified'
+                #valid = False
+            # verify client's signature
+            if not self.crypto.verifySignatureCC(pubk, payload, signature):
+                message['info'] = 'signature not verified'
+                valid = False
+
+            if not valid:
+                signature = self.certgen.signData(json.dumps(message))
+                signature = base64.b64encode(signature).decode()
+                message = {'payload': message, 'signature': signature}
+
+                bytes = self.sock.sendto(json.dumps(message).encode(), addr)
+            else:
+                print("> valid client's signature")
+                self.mylogger.log(INFO, "Verified Client Payload :\n{}".format(payload))
+
+                auction = msg['payload']['auction']
+                msg = {'payload': {'auction': auction, 'valid': valid}}
+
+                signature = self.certgen.signData(json.dumps(msg['payload']))
+                signature = base64.b64encode(signature).decode()
+
+                msg['signature'] = signature
+
+                # send: auction + validation of client's certificate + signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+        except:
+            print("Cannot create auction")
+            raise
+
+    def validateBid(self, data, addr):
+        try:
+            # check if certificate is valid
+            for auction in self.active_auctions:
+                if str(auction['serial']) == str(data['serial']):
+                    valid = False
+                    if 'bidders' in auction or 'limit_bids' in auction:
+                        # bidders: limit number of bidders to certain identities
+                        bidders = auction.bidders.split(',')  # format: ['1','2',...]
+
+                        # limit_bids = limit number of bids performed by each identity
+                        limit_bids = auction['limit_bids'].split(',')  # format: ['1:2','2:3'...]
+
+                        # bid_number: bids performed by the current identity, in the current auction
+                        if self.bid_number[data['serial']] is None:
+                            self.bid_number[data['serial']]['id'] = 0
+                            bid_number = 0
+                        else:
+                            self.bid_number[data['serial']]['id'] += 1
+                            bid_number = self.bid_number[data['serial']][data['id']]
+
+                        # validate bid with API
+                        valid = True
+
+                    # Mudar o true daqui quando tiver a API
+                    msg = {'payload': {'valid': True, 'hash': data['hash']}}
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    sent = self.sock.sendto(json.dumps(msg).encode(), addr)
+        except:
+            print("Cannot validate bid")
+            raise
 
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):
@@ -266,11 +319,14 @@ class Manager:
             self.address_client.append(client_addr)
 
     def validSignature(self, pubk, message, signature):
-        pubk = self.crypto.loadPubk(pubk)
-        if not self.crypto.verifySignatureServers(pubk, message, signature):
-            return False
-        return True
-
+        try:
+            pubk = self.crypto.loadPubk(pubk)
+            if not self.crypto.verifySignatureServers(pubk, message, signature):
+                return False
+            return True
+        except:
+            print("Cannot validate the signature")
+            raise
 
 if __name__ == "__main__":
     r = Manager(HOST, PORT)
@@ -278,3 +334,4 @@ if __name__ == "__main__":
         r.start()
     except KeyboardInterrupt:
         print("Exiting...")
+        raise
