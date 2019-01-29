@@ -485,6 +485,16 @@ class PortugueseCitizenCard:
                               " No open session found for slot with the id :{:2d} \nInfo : \n{:15s}".format(slot,
                                                                                                             strerror.__doc__))
 
+    def GetNameFromCERT(self, cert):
+        if isinstance(cert, str):
+            cert = cert.encode()
+        cert = x509.load_pem_x509_certificate(cert, default_backend())
+        nameattribute = cert.subject
+        relativedistinguishedname = [
+            x509.RelativeDistinguishedName([x]) for x in nameattribute
+        ][-1]
+        name = relativedistinguishedname._attributes[0].value
+        return name
 
 if __name__ == '__main__':
     try:
@@ -506,7 +516,10 @@ if __name__ == '__main__':
                 pteid.sessions[i].closeSession()
         print(pteid.PTEID_GetBI(slot))
 
+
         st1r = pteid.PTEID_GetCertificate(slot)
+
+        print("The certificate is from : {}".format(pteid.GetNameFromCERT(st1r)))
 
         print("\nIs this certificate valid: {:s}".format(str(pteid.verifyChainOfTrust(st1r))))
 
