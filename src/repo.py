@@ -1,4 +1,4 @@
-import os, datetime, sys, json, base64, re
+import os, datetime, sys, json, base64, re, copy
 
 from os import listdir
 from ast import literal_eval
@@ -15,7 +15,7 @@ HOST = "127.0.0.1"
 PORT_MAN = 8080
 PORT_REPO = 8081
 
-MAX_BUFFER_SIZE = 8192
+MAX_BUFFER_SIZE = 10000
 
 
 class Repository():
@@ -118,44 +118,63 @@ class Repository():
                 time_limit = re.findall('\d+', auction.time_limit)
                 time_limit = (int(time_limit[0]) * 3600) + (int(time_limit[1]) * 60) + int(time_limit[2])
 
+                print("> {} seconds have passed on auction {}".format(auction.serial, seconds))
+
                 # alert manager that the auction has ended. It will then calculate the winner
                 if seconds > time_limit:
                     print("> auction {} has ended".format(auction.serial))
                     self.closed_auctions.append(auction)
                     self.active_auctions.remove(auction)
 
+                    file = "auction{}.txt".format(auction.serial)
                     current_path = os.getcwd()
                     path = "{}/auctions/{}".format(current_path, file)
 
-                    msg = json.dumps({'end': path, 'signature': 'oi'})
-                    bytes = self.sock.sendto(msg.encode(), self.manager_address)
+                    msg = {'payload': {'end': path}}
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), self.manager_address)
+
                     data, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
                     data = json.loads(data)
 
-                    # the winner was found by the manager. The updated blockchain in the file is loaded onto the program
-                    if data['ack'] == 'ok':
-                        with open(path) as f:
-                            lines = f.readlines()
-                        lines = [x.strip("\n") for x in lines]
+                    signature = base64.b64decode(data['signature'])
+                    if self.validSignature(self.man_pubkey, json.dumps(data['payload']), signature):
+                        # the winner was found by the manager. The updated blockchain in the file is loaded onto the program
+                        if data['payload']['ack'] == 'ok':
+                            with open(path) as f:
+                                lines = f.readlines()
+                            lines = [x.strip("\n") for x in lines]
 
-                        blockchain = None
-                        for i in range(len(lines)):
-                            lines_dict = literal_eval(lines[i])
-                            if i == 0:
-                                blockchain = Blockchain(lines_dict['key'],lines_dict['serial'], lines_dict['id'],
-                                                        lines_dict['timestamp'], lines_dict['name'], lines_dict['time-limit'],
-                                                        lines_dict['description'], lines_dict['type'], lines_dict['bidders'],
-                                                        lines_dict['limit_bids'], lines_dict['state'], lines_dict['winner'],
-                                                        lines_dict['winner_amount'])
-                            else:
-                                block = Block(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
-                                              lines_dict['hash'], lines_dict['hash_prev'], lines_dict['amount'],
-                                              lines_dict['name'],lines_dict['id'], lines_dict['timestamp'])
-                                blockchain.add_block(block)
+                            blockchain = None
+                            for i in range(len(lines)):
 
-                        for a in range(len(self.closed_auctions)):
-                            if auction.serial == blockchain.serial:
-                                self.closed_auctions[a] = blockchain
+                                lines_dict = literal_eval(lines[i])
+
+                                if i == 0:
+                                    blockchain = Blockchain(lines_dict['key'], lines_dict['cert'], lines_dict['serial'], lines_dict['id'],
+                                                            lines_dict['timestamp'], lines_dict['name'], lines_dict['time-limit'],
+                                                            lines_dict['description'], lines_dict['type'], lines_dict['bidders'],
+                                                            lines_dict['limit_bids'], lines_dict['state'], lines_dict['winner'],
+                                                            lines_dict['winner_amount'])
+
+                                else:
+                                    block = Block(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
+                                                  lines_dict['hash'], lines_dict['hash_prev'], lines_dict['amount'],
+                                                  lines_dict['name'], lines_dict['id'], lines_dict['timestamp'])
+
+                                    blockchain.add_block(block)
+
+                            for a in range(len(self.closed_auctions)):
+                                if auction.serial == blockchain.serial:
+                                    self.closed_auctions[a] = blockchain
+
+                            for a in range(len(self.all_auctions)):
+                                if auction.serial == blockchain.serial:
+                                    self.all_auctions[a] = blockchain
+
+                    else:
+                        print("> couldn't find the winner")
 
             data, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
@@ -168,10 +187,10 @@ class Repository():
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
             else:
-                signature = base64.b64decode(data['signature'])
                 payload = json.dumps(data['payload'])
 
                 if 'auction' in data['payload']:
+                    signature = base64.b64decode(data['signature'])
                     if data['payload']['valid']:
                         if self.validSignature(self.man_pubkey, payload, signature):
                             data = data['payload']
@@ -202,10 +221,13 @@ class Repository():
                                                     data['auction']['description'], data['auction']['type'])
 
                 elif 'bid' in data['payload']:
-                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['bid']['id']], payload, signature):
-                        self.create_bid(addr, data['payload']['bid'])
+                    data2 = copy.deepcopy(data)
+                    signature = base64.b64decode(data2['payload'].pop('sig_c'))
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['bid']['id']], json.dumps(data2['payload']), signature):
+                        self.place_bid(addr, data['payload'])
 
                 elif 'command' in data['payload']:
+                    signature = base64.b64decode(data['signature'])
                     data = data['payload']
                     if 'bid_request' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
@@ -226,8 +248,8 @@ class Repository():
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                             self.check_receipt(addr)
 
-
                 if 'exit' in data:
+                    signature = base64.b64decode(data['signature'])
                     self.loggedInClient -= 1
                     if self.loggedInClient == 0:
                         self.mylogger.log(INFO, "Exiting Repository")
@@ -250,9 +272,6 @@ class Repository():
             self.all_auctions.append(blockchain)
 
             self.hash_prev[str(serial)] = '0'
-
-            print("aqui está o erro da key 2")
-            print(self.hash_prev)
 
             msg = {'payload': {'ack': 'ok', 'info': 'auction', 'id': id, 'serial': str(serial)}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
@@ -283,7 +302,7 @@ class Repository():
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
             else:
-                msg = {'payload': {'size': '5', 'type': type}}
+                msg = {'payload': {'size': '7', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
@@ -292,20 +311,22 @@ class Repository():
             raise
 
     # create a bid in an existent auction
-    def create_bid(self, addr, data):
+    def place_bid(self, addr, data):
         try:
             client_address = addr
-            print(self.hash_prev)
             for auction in self.active_auctions:
-                if data['serial'] == str(auction.serial):
-                    block = Block(data['key'], data['cert'], data['serial'], data['hash'], self.hash_prev[data['serial']],
-                                  data['amount'], data['id'], data['timestamp'])
-                    self.hash_prev[data['serial']] = data['hash']
+                if data['bid']['serial'] == str(auction.serial):
+                    block = Block(data['bid']['key'], data['bid']['cert'], data['bid']['serial'], data['bid']['hash'],
+                                  data['bid']['hash_prev'], data['bid']['amount'], data['bid']['name'],
+                                  data['bid']['id'], data['bid']['timestamp'])
+
+                    self.hash_prev[data['bid']['serial']] = data['bid']['hash']
 
                     # send block to manager for validation
                     msg = {'payload': {'bid_valid': data}}
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
+
                     bytes = self.sock.sendto(json.dumps(msg).encode(), self.manager_address)
 
                     # if manager signature is valid and bid is valid
@@ -318,15 +339,18 @@ class Repository():
                     if self.validSignature(self.man_pubkey, payload, signature):
                         # if bid is valid according to the manager, the bid is stored
                         if data2['payload']['valid'] is True:
-                            print("a assinatura e a bid são válidas")
                             auction.add_block(block)
                             print("> bid creation in auction {}: OK".format(auction.serial))
 
-                            self.hash_prev[str(auction.serial)] = data2['payload']['hash']
+                            # sign receipt
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']['receipt']))).decode()
+                            data2['payload']['receipt']['sig_r'] = signature
 
-                            msg = {'payload': {'ack': 'ok'}}
+                            msg = {'payload': {'ack': 'ok', 'receipt': data2['payload']['receipt']}}
+
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
+
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
                         else:
                             print("> bid creation in auction {}: NOK".format(auction.serial))
@@ -424,7 +448,7 @@ class Repository():
             msg = {}
             i = 0
             result = None
-            auctions_exists = False
+            client_exists = False
 
             for auction in self.all_auctions:
                 if str(auction.id) == id:

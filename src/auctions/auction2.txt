@@ -1,1 +1,0 @@
-{'serial': 2, 'timestamp': '01/23/2019, 15:44:14', 'name': '0h2m0s', 'time-limit': '', 'description': '', 'type': '', 'bidders': None, 'limit_bids': None, 'state': 'active', 'winner': None, 'winner_amount': None}
