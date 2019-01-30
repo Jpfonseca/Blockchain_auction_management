@@ -1,5 +1,6 @@
 import copy
 import json, random, string, sys, base64, datetime
+import os
 from socket import *
 
 from logging import DEBUG, ERROR, INFO
@@ -354,6 +355,14 @@ class Client:
                                     self.bid_keys[serial] = {str(answer): bid_key}
                                 else:
                                     self.bid_keys[serial][str(answer)] = bid_key
+
+                                # save receipt in a file
+                                current_path = os.getcwd()
+                                file = "auction_{}_bid_{}.txt".format(serial, answer)
+                                path = "{}/receipts/{}".format(current_path, file)
+                                text_file = open(path, "w")
+                                text_file.write("%s\n" % json.dumps(data['payload']['receipt']))
+
                                 print("\nBid created successfully")
                             else:
                                 print("Receipt signatures are not valid. Exiting compromised system...")
