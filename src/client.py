@@ -120,10 +120,6 @@ class Client:
         self.repo_pubkey = data1['repo_pubk']
         self.man_pubkey = data2['man_pubk']
 
-        # the client's certificate is invalid
-        if 'err' in data1:
-            print("Invalid Certificate")
-            sys.exit(-1)
         # save the repository and manager address
         if 'repo_pubk' in data1:
             self.repo_address = address
@@ -162,13 +158,7 @@ class Client:
             elif option == '9':
                 self.display_client()
             elif option == '10':
-                msg = json.dumps({'payload': {'exit': 'client exit'}})
-                sent = self.sock.sendto(msg.encode(), self.man_address)
-                sent = self.sock.sendto(msg.encode(), self.repo_address)
-                # remove files
-                self.mylogger.log(INFO, "Exiting Client")
-
-                sys.exit()
+                self.exit(0)
             else:
                 print("Not a valid option!\n")
 
@@ -236,23 +226,13 @@ class Client:
                     print("\nNew auction created!")
                 else:
                     print("The auction was NOT created. Error: {}".format(data['payload']['info']))
-                    msg = json.dumps({'payload': {'exit': 'client exit'}})
-                    sent = self.sock.sendto(msg.encode(), self.man_address)
-                    sent = self.sock.sendto(msg.encode(), self.repo_address)
-                    c.mylogger.log(INFO, "Exiting Client")
-                    print("Exiting...")
-                    sys.exit(-1)
+                    self.exit(1)
             else:
                 print("Manager Pubk not verified")
-                msg = json.dumps({'payload': {'exit': 'client exit'}})
-                sent = self.sock.sendto(msg.encode(), self.man_address)
-                sent = self.sock.sendto(msg.encode(), self.repo_address)
-                c.mylogger.log(INFO, "Exiting Client")
-                print("Exiting...")
-                sys.exit(-1)
+                self.exit(1)
         except:
-            raise Exception("Cannot contact the manager")
-
+            print("Cannot contact the manager")
+            raise
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):
         try:
@@ -368,6 +348,7 @@ class Client:
                                 sys.exit(-1)
                         else:
                             print("\nBid not created")
+                            self.exit(1)
         except:
             print("Bid was not created")
             raise
@@ -532,9 +513,20 @@ class Client:
             raise
 
     # shutdown the socket
-    def close(self):
-        self.sock.shutdown(socket.SHUT_RDWR)
+    def exit(self, type):
+
+        msg = {'payload': {'exit': 'client exit', 'id': self.id}}
+
+        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+        msg['signature'] = signature
+
+        sent = self.sock.sendto(json.dumps(msg).encode(), self.man_address)
+        sent = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+
+        self.mylogger.log(INFO, "Exiting Client")
+        print("Exiting...")
         self.sock.close()
+        sys.exit(type)
 
 
 if __name__ == "__main__":
@@ -544,9 +536,4 @@ if __name__ == "__main__":
     try:
         c.start()
     except KeyboardInterrupt:
-        msg = json.dumps({'exit': 'client exit'})
-        sent = c.sock.sendto(msg.encode(), c.man_address)
-        sent = c.sock.sendto(msg.encode(), c.repo_address)
-        c.mylogger.log(INFO, "Exiting Client")
-        print("Exiting...")
-        c.close()
+        c.exit('0')

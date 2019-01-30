@@ -122,7 +122,7 @@ class Manager:
                     signature = base64.b64decode(data2['signature'])
                     if self.crypto.verifySignatureCC(self.pubkey_dict[data2['payload']['auction']['id']],
                                                      json.dumps(data2['payload']), signature):
-                        self.createAuction(data2, addr)
+                        self.create_auction(data2, addr)
 
                 if 'bid_valid' in data2['payload']:
                     signature = base64.b64decode(data2['signature'])
@@ -157,13 +157,19 @@ class Manager:
                     if self.validSignature(self.repo_pubkey, json.dumps(data2['payload']), signature):
                         self.get_winner(data2['payload'])
 
-                if 'exit' in data2:
-                    self.loggedInClient -= 1
-                    if self.loggedInClient == 0:
-                        self.mylogger.log(INFO, "Exiting Manager")
-                        sys.exit(-1)
+                if 'exit' in data2['payload']:
 
-    def createAuction(self, msg, addr):
+                    msg = json.dumps({'payload': {'exit': 'client exit'}})
+                    signature = base64.b64decode(data2['signature'])
+
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data2['payload']['id']],
+                                                 json.dumps(data2['payload']), signature):
+                        self.loggedInClient -= 1
+                        if self.loggedInClient <= 0:
+                            self.mylogger.log(INFO, "Exiting Manager")
+                            sys.exit(0)
+
+    def create_auction(self, msg, addr):
         try:
             # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
             id = msg['payload']['auction']['id']
@@ -191,22 +197,20 @@ class Manager:
             cert_pubk = self.certops.getPubKey()
             cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
             # Pem
-            message = {'ack': 'nok'}
+            message = {'payload': {'ack': 'nok'}}
 
             valid = True
 
             if not cert_pubk == pubk.encode():
-                message['info'] = 'diff pubk'
+                message['payload']['info'] = 'diff pubk'
                 valid = False
-            # if not self.cc.verifyChainOfTrust(cert):
-            # message['info'] = 'cc cert not verified'
-            # valid = False
+            #if not self.cc.verifyChainOfTrust(cert):
+                #message['payload']['info'] = 'cc cert not verified'
+                #valid = False
 
             if not valid:
-                signature = self.certgen.signData(json.dumps(message))
-                signature = base64.b64encode(signature).decode()
-                message = {'payload': message, 'signature': signature}
-
+                signature = base64.b64encode(self.certgen.signData(json.dumps(message['payload']))).decode()
+                message['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(message).encode(), addr)
             else:
                 print("> valid client's signature")

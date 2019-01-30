@@ -187,38 +187,36 @@ class Repository():
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
             else:
-                payload = json.dumps(data['payload'])
-
                 if 'auction' in data['payload']:
                     signature = base64.b64decode(data['signature'])
                     if data['payload']['valid']:
-                        if self.validSignature(self.man_pubkey, payload, signature):
-                            data = data['payload']
-                            if ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
-                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
-                                                    data['auction']['name'], data['auction']['time-limit'],
-                                                    data['auction']['description'], data['auction']['type'],
-                                                    bidders=data['auction']['bidders'], limit_bids=data['auction']['limit_bids'])
+                        if self.validSignature(self.man_pubkey, json.dumps(data['payload']), signature):
+                            data2 = data['payload']
+                            if ('bidders' in data2['auction']) and ('limit_bids' in data2['auction']):
+                                self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
+                                                    self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
+                                                    data2['auction']['name'], data2['auction']['time-limit'],
+                                                    data2['auction']['description'], data2['auction']['type'],
+                                                    bidders=data2['auction']['bidders'], limit_bids=data2['auction']['limit_bids'])
 
-                            elif ('bidders' in data['auction']) and not ('limit_bids' in data['auction']):
-                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
-                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
-                                                    data['auction']['name'], data['auction']['time-limit'],
-                                                    data['auction']['description'], data['auction']['type'],
-                                                    bidders=data['auction']['bidders'])
+                            elif ('bidders' in data2['auction']) and not ('limit_bids' in data2['auction']):
+                                self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
+                                                    self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
+                                                    data2['auction']['name'], data2['auction']['time-limit'],
+                                                    data2['auction']['description'], data2['auction']['type'],
+                                                    bidders=data2['auction']['bidders'])
 
-                            elif not ('bidders' in data['auction']) and ('limit_bids' in data['auction']):
-                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
-                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
-                                                    data['auction']['name'], data['auction']['time-limit'],
-                                                    data['auction']['description'], data['auction']['type'],
-                                                    limit_bids=data['auction']['limit_bids'])
+                            elif not ('bidders' in data2['auction']) and ('limit_bids' in data2['auction']):
+                                self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
+                                                    self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
+                                                    data2['auction']['name'], data2['auction']['time-limit'],
+                                                    data2['auction']['description'], data2['auction']['type'],
+                                                    limit_bids=data2['auction']['limit_bids'])
                             else:
-                                self.create_auction(addr, data['auction']['key'], data['auction']['cert'],
-                                                    self.serial + 1, data['auction']['id'], data['auction']['timestamp'],
-                                                    data['auction']['name'], data['auction']['time-limit'],
-                                                    data['auction']['description'], data['auction']['type'])
+                                self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
+                                                    self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
+                                                    data2['auction']['name'], data2['auction']['time-limit'],
+                                                    data2['auction']['description'], data2['auction']['type'])
 
                 elif 'bid' in data['payload']:
                     data2 = copy.deepcopy(data)
@@ -228,32 +226,36 @@ class Repository():
 
                 elif 'command' in data['payload']:
                     signature = base64.b64decode(data['signature'])
-                    data = data['payload']
-                    if 'bid_request' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
-                            self.send_pow(addr, data)
-                    elif 'list_open' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
+                    data2 = data['payload']
+                    payload = json.dumps(data2)
+                    if 'bid_request' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
+                            self.send_pow(addr, data2)
+                    elif 'list_open' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
                             self.list_open(addr)
-                    elif 'list_closed' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
+                    elif 'list_closed' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
                             self.list_closed(addr)
-                    elif 'bid_auction' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
-                            self.bids_auction(addr, data['serial'])
-                    elif 'bid_client' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
-                            self.bids_client(addr, data['c_id'])
-                    elif 'check_receipt' in data['command']:
-                        if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
+                    elif 'bid_auction' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
+                            self.bids_auction(addr, data2['serial'])
+                    elif 'bid_client' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
+                            self.bids_client(addr, data2['c_id'])
+                    elif 'check_receipt' in data2['command']:
+                        if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
                             self.check_receipt(addr)
 
-                if 'exit' in data:
+                if 'exit' in data['payload']:
+                    msg = json.dumps({'payload': {'exit': 'client exit'}})
                     signature = base64.b64decode(data['signature'])
-                    self.loggedInClient -= 1
-                    if self.loggedInClient == 0:
-                        self.mylogger.log(INFO, "Exiting Repository")
-                        sys.exit(-1)
+
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['id']], json.dumps(data['payload']), signature):
+                        self.loggedInClient -= 1
+                        if self.loggedInClient <= 0:
+                            self.mylogger.log(INFO, "Exiting Repository")
+                            sys.exit(0)
 
                 for auction in self.active_auctions:
                     file = "auction{}.txt".format(auction.serial)
@@ -354,7 +356,8 @@ class Repository():
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
                         else:
                             print("> bid creation in auction {}: NOK".format(auction.serial))
-                            msg = {'payload': {'ack': 'nok'}}
+                            msg = {'payload': {'ack': 'nok', 'info': 'bid'}}
+
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
