@@ -1,4 +1,4 @@
-import os, datetime, sys, json, base64, re
+import os, datetime, sys, json, base64, re, copy
 
 from os import listdir
 from ast import literal_eval
@@ -15,7 +15,7 @@ HOST = "127.0.0.1"
 PORT_MAN = 8080
 PORT_REPO = 8081
 
-MAX_BUFFER_SIZE = 8192
+MAX_BUFFER_SIZE = 10000
 
 
 class Repository():
@@ -168,10 +168,10 @@ class Repository():
                 self.clientLogin(data, addr)
                 self.loggedInClient += 1
             else:
-                signature = base64.b64decode(data['signature'])
                 payload = json.dumps(data['payload'])
 
                 if 'auction' in data['payload']:
+                    signature = base64.b64decode(data['signature'])
                     if data['payload']['valid']:
                         if self.validSignature(self.man_pubkey, payload, signature):
                             data = data['payload']
@@ -202,10 +202,13 @@ class Repository():
                                                     data['auction']['description'], data['auction']['type'])
 
                 elif 'bid' in data['payload']:
-                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['bid']['id']], payload, signature):
-                        self.create_bid(addr, data['payload']['bid'])
+                    data2 = copy.deepcopy(data)
+                    signature = base64.b64decode(data2['payload'].pop('sig_c'))
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data['payload']['bid']['id']], json.dumps(data2['payload']), signature):
+                        self.create_bid(addr, data['payload'])
 
                 elif 'command' in data['payload']:
+                    signature = base64.b64decode(data['signature'])
                     data = data['payload']
                     if 'bid_request' in data['command']:
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
@@ -226,8 +229,8 @@ class Repository():
                         if self.crypto.verifySignatureCC(self.pubkey_dict[data['id']], payload, signature):
                             self.check_receipt(addr)
 
-
                 if 'exit' in data:
+                    signature = base64.b64decode(data['signature'])
                     self.loggedInClient -= 1
                     if self.loggedInClient == 0:
                         self.mylogger.log(INFO, "Exiting Repository")
@@ -250,9 +253,6 @@ class Repository():
             self.all_auctions.append(blockchain)
 
             self.hash_prev[str(serial)] = '0'
-
-            print("aqui está o erro da key 2")
-            print(self.hash_prev)
 
             msg = {'payload': {'ack': 'ok', 'info': 'auction', 'id': id, 'serial': str(serial)}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
@@ -283,7 +283,7 @@ class Repository():
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
             else:
-                msg = {'payload': {'size': '5', 'type': type}}
+                msg = {'payload': {'size': '7', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
@@ -295,17 +295,19 @@ class Repository():
     def create_bid(self, addr, data):
         try:
             client_address = addr
-            print(self.hash_prev)
             for auction in self.active_auctions:
-                if data['serial'] == str(auction.serial):
-                    block = Block(data['key'], data['cert'], data['serial'], data['hash'], self.hash_prev[data['serial']],
-                                  data['amount'], data['id'], data['timestamp'])
-                    self.hash_prev[data['serial']] = data['hash']
+                if data['bid']['serial'] == str(auction.serial):
+                    block = Block(data['bid']['key'], data['bid']['cert'], data['bid']['serial'], data['bid']['hash'],
+                                  data['bid']['hash_prev'], data['bid']['amount'], data['bid']['name'],
+                                  data['bid']['id'], data['bid']['timestamp'])
+
+                    self.hash_prev[data['bid']['serial']] = data['bid']['hash']
 
                     # send block to manager for validation
                     msg = {'payload': {'bid_valid': data}}
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
+
                     bytes = self.sock.sendto(json.dumps(msg).encode(), self.manager_address)
 
                     # if manager signature is valid and bid is valid
@@ -318,15 +320,18 @@ class Repository():
                     if self.validSignature(self.man_pubkey, payload, signature):
                         # if bid is valid according to the manager, the bid is stored
                         if data2['payload']['valid'] is True:
-                            print("a assinatura e a bid são válidas")
                             auction.add_block(block)
                             print("> bid creation in auction {}: OK".format(auction.serial))
 
-                            self.hash_prev[str(auction.serial)] = data2['payload']['hash']
+                            # sign receipt
+                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']['receipt']))).decode()
+                            data2['payload']['receipt']['sig_r'] = signature
 
-                            msg = {'payload': {'ack': 'ok'}}
+                            msg = {'payload': {'ack': 'ok', 'receipt': data2['payload']['receipt']}}
+
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
+
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
                         else:
                             print("> bid creation in auction {}: NOK".format(auction.serial))
@@ -424,7 +429,7 @@ class Repository():
             msg = {}
             i = 0
             result = None
-            auctions_exists = False
+            client_exists = False
 
             for auction in self.all_auctions:
                 if str(auction.id) == id:

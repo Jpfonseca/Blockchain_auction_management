@@ -1,3 +1,4 @@
+import copy
 import json, random, string, sys, base64, datetime
 from socket import *
 
@@ -16,7 +17,7 @@ HOST = "127.0.0.1"
 PORT_MAN = 8080
 PORT_REPO = 8081
 
-MAX_BUFFER_SIZE = 8192
+MAX_BUFFER_SIZE = 10000
 
 
 class Client:
@@ -86,7 +87,7 @@ class Client:
 
         self.mylogger.log(INFO, "Client ID: {}".format(self.id))
 
-        # get pubk from cert
+        # calculate md5 digest of the citizen card number (id of the user)
         certop = CertificateOperations()
         certop.getCertfromPem(cert)
         self.client_pubk = certop.getPubKey().public_bytes(
@@ -178,7 +179,7 @@ class Client:
             name = input("Name: ")
             time_limit = input("Time limit: ")  # format: 0h0m30s
             description = input("Description: ")
-            type_auction = input("Type of auction (e/s):")
+            type_auction = input("(e)nglish or (b)lind):")
             bidders = input("Limit to bidders:")  # format: 1,2,3...
             limit_bids = input("Limit bids of a bidder:")  # format: 1:2, 2:3
 
@@ -297,21 +298,21 @@ class Client:
 
                     if type == 'e':
                         msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'amount': amount, 'id': self.id,
-                                                   'timestamp': date_time}}}
+                                                   'hash': answer, 'hash_prev': data['payload']['hash_prev'],
+                                                   'amount': amount, 'name': "", 'id': self.id, 'timestamp': date_time}}}
 
-                        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
-                        msg['signature'] = signature
-                        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
-
-                    elif type == 's':
+                    elif type == 'b':
+                        encryptedAmount = base64.b64encode(f.encrypt(amount.encode())).decode()
                         msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'amount': amount, 'id': self.id,
+                                                   'hash': answer, 'hash_prev': data['payload']['hash_prev'],
+                                                   'amount': encryptedAmount, 'name': "", 'id': self.id,
                                                    'timestamp': date_time}}}
 
-                        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
-                        msg['signature'] = signature
-                        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+                    signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+                    msg['payload']['sig_c'] = signature
+
+                    # {'payload': {'bid': {...}, 'sig_c': signature}, 'signature': signature}
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
                     # receive ack or nack of the bid creation
                     data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
@@ -321,11 +322,42 @@ class Client:
                     payload = json.dumps(data['payload'])
                     if self.validSignature(self.repo_pubkey, payload, signature):
                         if data['payload']['ack'] == 'ok':
-                            if serial not in self.bid_keys:
-                                self.bid_keys[serial] = {str(answer): bid_key}
+
+                            repo_valid = False
+                            manager_valid = False
+                            client_valid = False
+
+                            # validate received receipt and store it in a file
+                            print("Receipt validation:")
+                            data_v = copy.deepcopy(data['payload']['receipt'])
+
+                            # verify repository signature
+                            signature = base64.b64decode(data_v.pop('sig_r'))
+                            if self.validSignature(self.repo_pubkey, json.dumps(data_v), signature):
+                                repo_valid = True
+                                print("Repository's signature -> valid")
+
+                            # verify manager signature
+                            signature = base64.b64decode(data_v.pop('sig_m'))
+                            if self.validSignature(self.man_pubkey, json.dumps(data_v), signature):
+                                manager_valid = True
+                                print("Manager's signature -> valid")
+
+                            # verify client signature
+                            signature = base64.b64decode(data_v.pop('sig_c'))
+                            if self.crypto.verifySignatureCC(self.client_pubk, json.dumps(data_v), signature):
+                                client_valid = True
+                                print("Client's signature -> valid")
+
+                            if repo_valid and manager_valid and client_valid:
+                                if serial not in self.bid_keys:
+                                    self.bid_keys[serial] = {str(answer): bid_key}
+                                else:
+                                    self.bid_keys[serial][str(answer)] = bid_key
+                                print("\nBid created successfully")
                             else:
-                                self.bid_keys[serial][str(answer)] = bid_key
-                            print("\nBid created successfully")
+                                print("Receipt signatures are not valid. Exiting compromised system...")
+                                sys.exit(-1)
                         else:
                             print("\nBid not created")
         except:
@@ -476,7 +508,7 @@ class Client:
             solution = self.gen_string(int(size))
 
             if solution.startswith("11"):
-                print("Answer: {}".format(solution))
+                print("Answer: {}\n".format(solution))
                 result = True
 
         return solution

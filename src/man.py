@@ -17,7 +17,7 @@ HOST = "127.0.0.1"
 PORT = 8080
 PORT_REPO = 8081
 
-MAX_BUFFER_SIZE = 8192
+MAX_BUFFER_SIZE = 10000
 
 class Manager:
     def __init__(self, host, port):
@@ -59,6 +59,8 @@ class Manager:
         self.bid_number = {}
         # dictionary with keys and certs associated with auctioner and bidders
         #self.certs_dic = {}
+        # dictionary with serial of auction and previous amount bidded
+        self.auction_amount = {}
 
     # server and client exchange public keys
     def start(self):
@@ -120,7 +122,6 @@ class Manager:
                 if 'bid_valid' in data2['payload']:
                     signature = base64.b64decode(data2['signature'])
                     payload = json.dumps(data2['payload'])
-
                     if self.validSignature(self.repo_pubkey, payload, signature):
                         self.validateBid(data2['payload']['bid_valid'], addr)
 
@@ -267,28 +268,48 @@ class Manager:
         try:
             # check if certificate is valid
             for auction in self.active_auctions:
-                if str(auction['serial']) == str(data['serial']):
+                if str(auction['serial']) == str(data['bid']['serial']):
+                    # in english auction, check if the current amount bidded is higher than the previous
+                    if auction['type'] == 'e':
+                        if data['bid']['serial'] not in self.auction_amount:
+                            self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+                        else:
+                            previous_amount = self.auction_amount[data['bid']['serial']]
+                            self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+
+                            if int(self.auction_amount[data['bid']['serial']]) < int(previous_amount):
+                                msg = {'payload': {'valid': False}}
+                                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                                msg['signature'] = signature
+                                sent = self.sock.sendto(json.dumps(msg).encode(), addr)
+
                     valid = False
                     if 'bidders' in auction or 'limit_bids' in auction:
                         # bidders: limit number of bidders to certain identities
-                        bidders = auction.bidders.split(',')  # format: ['1','2',...]
+                        bidders = auction['bidders'].split(',')  # format: ['1','2',...]
 
                         # limit_bids = limit number of bids performed by each identity
                         limit_bids = auction['limit_bids'].split(',')  # format: ['1:2','2:3'...]
 
                         # bid_number: bids performed by the current identity, in the current auction
-                        if self.bid_number[data['serial']] is None:
-                            self.bid_number[data['serial']]['id'] = 0
+                        if self.bid_number[data['bid']['serial']] is None:
+                            self.bid_number[data['bid']['serial']]['id'] = 0
                             bid_number = 0
                         else:
-                            self.bid_number[data['serial']]['id'] += 1
-                            bid_number = self.bid_number[data['serial']][data['id']]
+                            self.bid_number[data['bid']['serial']]['id'] += 1
+                            bid_number = self.bid_number[data['bid']['serial']][data['bid']['id']]
 
                         # validate bid with API
                         valid = True
 
                     # Mudar o true daqui quando tiver a API
-                    msg = {'payload': {'valid': True, 'hash': data['hash']}}
+
+                    # sign the receipt
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
+                    data['sig_m'] = signature
+
+                    msg = {'payload': {'valid': True, 'receipt': data}}
+
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
                     sent = self.sock.sendto(json.dumps(msg).encode(), addr)

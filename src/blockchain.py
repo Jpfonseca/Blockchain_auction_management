@@ -9,7 +9,7 @@ from log import LoggyLogglyMcface
 
 class Block:
 
-    def __init__(self, key=None, cert=None, serial=None, hash=None, hash_prev=None, amount=None, id=None, timestamp=None):
+    def __init__(self, key=None, cert=None, serial=None, hash=None, hash_prev=None, amount=None, name=None, id=None, timestamp=None):
         self.mylogger = LoggyLogglyMcface(name=Block.__name__)
         self.mylogger.log(INFO, "Entering Block interface")
 
@@ -19,16 +19,17 @@ class Block:
         self.hash = hash
         self.hash_prev = hash_prev
         self.amount = amount  # encrypt
+        self.name = name
         self.id = id
         self.timestamp = timestamp
         self.next = None
         self.previous = None
 
         self.block_to_file = {'key': key, 'cert': cert, 'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
-                           'amount': amount, 'id': id, 'timestamp': timestamp}
+                           'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
 
         self.block_to_user = {'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
-                              'amount': amount, 'id': id, 'timestamp': timestamp}
+                              'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
 
     # get info about a bid
     def info(self):
