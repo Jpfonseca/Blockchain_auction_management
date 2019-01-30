@@ -12,12 +12,12 @@ from security import *
 from cryptography.fernet import Fernet
 from cc_interface import PortugueseCitizenCard
 
-
 HOST = "127.0.0.1"
 PORT = 8080
 PORT_REPO = 8081
 
 MAX_BUFFER_SIZE = 10000
+
 
 class Manager:
     def __init__(self, host, port):
@@ -58,7 +58,7 @@ class Manager:
         # dictionary of number of bids per bidder in an auction
         self.bid_number = {}
         # dictionary with keys and certs associated with auctioner and bidders
-        #self.certs_dic = {}
+        # self.certs_dic = {}
         # dictionary with serial of auction and previous amount bidded
         self.auction_amount = {}
 
@@ -73,7 +73,7 @@ class Manager:
         self.privateKey = self.certgen.privateKey
         # get public key of manager and store to global variable
         self.man_pubkey = self.certgen.publicKeyToBytes()
-        #self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
+        # self.man_pubkey = base64.b64encode(self.man_pubkeyb).decode()
 
         print("Listening...")
 
@@ -104,6 +104,7 @@ class Manager:
         self.loop()
 
         # manager waits for client or repository messages
+
     def loop(self):
         while (True):
             data, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
@@ -118,78 +119,44 @@ class Manager:
                 self.loggedInClient += 1
             else:
                 if 'auction' in data2['payload']:
-                    self.createAuction(data2, addr)
+                    signature = base64.b64decode(data2['signature'])
+                    if self.crypto.verifySignatureCC(self.pubkey_dict[data2['payload']['auction']['id']],
+                                                     json.dumps(data2['payload']), signature):
+                        self.createAuction(data2, addr)
+
                 if 'bid_valid' in data2['payload']:
                     signature = base64.b64decode(data2['signature'])
-                    payload = json.dumps(data2['payload'])
-                    if self.validSignature(self.repo_pubkey, payload, signature):
+                    if self.validSignature(self.repo_pubkey, json.dumps(data2['payload']), signature):
                         self.validateBid(data2['payload']['bid_valid'], addr)
 
                 if 'ack' in data2['payload']:
-                    if data2['payload']['ack'] == 'ok':
-                        # auction was created in repository
-                        if data2['payload']['info'] == 'auction':
-                            print("> auction creation: OK")
-                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload']))).decode()
-                            self.active_auctions[-1]['serial'] = data2['payload']['serial']
-                            data2['signature'] = signature
-                            bytes = self.sock.sendto(json.dumps(data2).encode(),
-                                                    self.clients_address[data2['payload']['id']])
-                        # bid was created in repository
-                        if data2['payload']['info'] == 'bid':
-                            print("> bid creation: OK")
+                    signature = base64.b64decode(data2['signature'])
 
-                    elif data2['payload']['ack'] == 'nok':
-                        # auction was not created on the repository
-                        if data2['payload']['info'] == 'auction':
-                            print("> auction creation: NOT OK")
-                            signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
-                            data2['signature'] = signature
-                            bytes = self.sock.sendto(json.dumps(data2).encode(),
-                                                    self.clients_address[data2['payload']['id']])
-                        # bid was not created in the repository
-                        if data2['info'] == 'bid':
-                            print("> bid creation: NOK")
+                    if self.validSignature(self.repo_pubkey, json.dumps(data2['payload']), signature):
+                        if data2['payload']['ack'] == 'ok':
+                            # auction was created in repository
+                            if data2['payload']['info'] == 'auction':
+                                print("> auction creation: OK")
+                                signature = base64.b64encode(
+                                    self.certgen.signData(json.dumps(data2['payload']))).decode()
+                                self.active_auctions[-1]['serial'] = data2['payload']['serial']
+                                data2['signature'] = signature
+                                bytes = self.sock.sendto(json.dumps(data2).encode(),
+                                                         self.clients_address[data2['payload']['id']])
+                        elif data2['payload']['ack'] == 'nok':
+                            # auction was not created on the repository
+                            if data2['payload']['info'] == 'auction':
+                                print("> auction creation: NOT OK")
+                                signature = base64.b64encode(self.certgen.signData(json.dumps(data2['payload'])))
+                                data2['signature'] = signature
+                                bytes = self.sock.sendto(json.dumps(data2).encode(),
+                                                         self.clients_address[data2['payload']['id']])
 
-                if 'end' in data2:
-                    winner_dict = {}
-                    result = []
+                if 'end' in data2['payload']:
+                    signature = base64.b64decode(data2['signature'])
+                    if self.validSignature(self.repo_pubkey, json.dumps(data2['payload']), signature):
+                        self.get_winner(data2['payload'])
 
-                    print("> auction ended")
-
-                    # load the auction file and calculate the winner
-                    with open(data2['end']) as f:
-                        lines = f.readlines()
-
-                    auction = lines.pop(0)
-                    auction_dict = literal_eval(auction)
-
-                    for line in lines:
-                        line = line[:-1]
-                        bid = literal_eval(line)
-                        winner_dict[str(bid['id'])] = bid['amount']
-
-                        # decrypt bids
-
-                    winner = max(zip(winner_dict.values(), winner_dict.keys()))
-
-                    auction_dict['winner'] = winner[1]
-                    auction_dict['winner_amount'] = winner[0]
-                    auction_dict['state'] = 'closed'
-
-                    result.append(str(auction_dict))
-
-                    for line in lines:
-                        line = line[:-1]
-                        result.append(line)
-
-                    with open(data2['end'], 'w') as f:
-                        for line in result:
-                            f.write("%s\n" % line)
-
-                    # the winner was found and the new blockchain was written to the file
-                    msg = json.dumps({'ack': 'ok'})
-                    bytes = self.sock.sendto(msg.encode(), self.repo_address)
                 if 'exit' in data2:
                     self.loggedInClient -= 1
                     if self.loggedInClient == 0:
@@ -207,7 +174,6 @@ class Manager:
             # extract auction parameters
             auction = msg['payload']['auction']
             self.active_auctions.append(auction)
-            print("new active auction")
 
             pubk = self.pubkey_dict[id]
             payload = json.dumps(msg['payload'])
@@ -232,13 +198,9 @@ class Manager:
             if not cert_pubk == pubk.encode():
                 message['info'] = 'diff pubk'
                 valid = False
-            #if not self.cc.verifyChainOfTrust(cert):
-                #message['info'] = 'cc cert not verified'
-                #valid = False
-            # verify client's signature
-            if not self.crypto.verifySignatureCC(pubk, payload, signature):
-                message['info'] = 'signature not verified'
-                valid = False
+            # if not self.cc.verifyChainOfTrust(cert):
+            # message['info'] = 'cc cert not verified'
+            # valid = False
 
             if not valid:
                 signature = self.certgen.signData(json.dumps(message))
@@ -317,6 +279,77 @@ class Manager:
             print("Cannot validate bid")
             raise
 
+    def get_winner(self, data):
+        winner_dict = {}
+        result = []
+
+        print("> auction ended")
+
+        # load the auction file and calculate the winner
+        with open(data['end']) as f:
+            lines = f.readlines()
+
+        auction = lines.pop(0)
+        auction_dict = literal_eval(auction)
+        type = auction_dict['type']
+
+        for line in lines:
+            line = line[:-1]
+            bid = literal_eval(line)
+
+            # decrypt symmetric key bid['key'] with manager private key
+            encryptedKey = base64.b64decode(bid['key'])
+            key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
+
+            # decrypt client's certificate
+            f = Fernet(key)
+            encryptedCert = base64.b64decode(bid['cert'])
+            cert = f.decrypt(encryptedCert)
+            self.certops.getCertfromPem(cert)
+            cert_pubk = self.certops.getPubKey()
+            cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
+
+            # if auction type is 'b', must also decrypt the amount
+            if type == 'b':
+                encryptedAmount = base64.b64decode(bid['amount'])
+                amount = f.decrypt(encryptedAmount).decode()
+                bid['amount'] = amount
+
+            bid['name'] = self.cc.GetNameFromCERT(cert)
+            winner_dict[str(bid['name'])] = bid['amount']
+
+            # add the current bid to the result list (that will saved to the file)
+            result.append(str(bid))
+
+        # calculate the winner of the auction
+        winner = max(zip(winner_dict.values(), winner_dict.keys()))
+
+        # store the identity of the winner in the auction
+        auction_dict['winner'] = winner[1]
+        auction_dict['winner_amount'] = winner[0]
+        auction_dict['state'] = 'closed'
+
+        result.append(str(auction_dict))
+
+        # escreve a auction e as bids para o ficheiro
+        with open(data['end'], 'w') as f:
+            # the last element of the list is the auction
+            f.write("%s\n" % result[-1])
+
+            result.remove(result[-1])
+
+            print(result)
+
+            # the other elements of the list are the bids
+            for line in result:
+                f.write("%s\n" % line)
+
+        # the winner was found and the new blockchain was written to the file
+        msg = {'payload': {'ack': 'ok'}}
+        signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+        msg['signature'] = signature
+        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def clientLogin(self, message, client_addr):
         cert = None
@@ -348,6 +381,7 @@ class Manager:
         except:
             print("Cannot validate the signature")
             raise
+
 
 if __name__ == "__main__":
     r = Manager(HOST, PORT)

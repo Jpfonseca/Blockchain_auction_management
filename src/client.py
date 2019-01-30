@@ -41,9 +41,6 @@ class Client:
         self.auction_keys = {}
         self.bid_keys = {}
 
-        # id (and name of the client)
-        self.id = None
-        self.name = None
         # addresses of the servers
         self.repo_address = None
         self.man_address = None
@@ -55,6 +52,9 @@ class Client:
         self.cc = PortugueseCitizenCard()
         self.crypto = CryptoUtils()
         self.slot = -1
+        # id (and name of the client)
+        self.id = None
+        self.name = None
 
     # servers and client exchange public keys
     def start(self):
@@ -221,9 +221,8 @@ class Client:
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 
             msg['signature'] = signature
-            msg = json.dumps(msg)
             # size = sys.getsizeof(msg.encode())
-            bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
+            bytes = self.sock.sendto(json.dumps(msg).encode(), (self.host, self.port_man))
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
             data = json.loads(data)
