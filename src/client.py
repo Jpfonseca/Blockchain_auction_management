@@ -59,111 +59,119 @@ class Client:
 
     # servers and client exchange public keys
     def start(self):
-        # ask user which slot to use
-        fullnames = self.cc.getSmartcardsNames()
+        try:
+            # ask user which slot to use
+            fullnames = self.cc.getSmartcardsNames()
 
-        slot = -1
-        if len(self.cc.sessions) > 0:
-            temp = ''.join('Slot{:3d}-> Fullname: {:10s}\n'.format(i, fullnames[i]) for i in range(0, len(fullnames)))
+            slot = -1
+            if len(self.cc.sessions) > 0:
+                temp = ''.join('Slot{:3d}-> Fullname: {:10s}\n'.format(i, fullnames[i]) for i in range(0, len(fullnames)))
 
-            while slot < 0 or slot > len(self.cc.sessions):
-                slot = input("Available Slots: \n{:40s} \n\nWhich Slot do you wish to use? ".format(temp))
-                if slot.isdigit():
-                    slot = int(slot)
-                else:
-                    slot = -1
-            self.slot = slot
+                while slot < 0 or slot > len(self.cc.sessions):
+                    slot = input("Available Slots: \n{:40s} \n\nWhich Slot do you wish to use? ".format(temp))
+                    if slot.isdigit():
+                        slot = int(slot)
+                    else:
+                        slot = -1
+                self.slot = slot
 
-        # close sessions for other slots
-        for i in range(0, len(self.cc.sessions)):
-            if slot != i:
-                self.cc.sessions[i].closeSession()
+            # close sessions for other slots
+            for i in range(0, len(self.cc.sessions)):
+                if slot != i:
+                    self.cc.sessions[i].closeSession()
 
-        # get cc certificate (bytes)
-        cert = self.cc.PTEID_GetCertificate(self.slot)
-        self.client_cert = cert
+            # get cc certificate (bytes)
+            cert = self.cc.PTEID_GetCertificate(self.slot)
+            self.client_cert = cert
 
-        self.name = self.cc.GetNameFromCERT(cert)
+            self.name = self.cc.GetNameFromCERT(cert)
 
-        digest = hashes.Hash(hashes.MD5(), backend=default_backend())
-        digest.update(self.cc.PTEID_GetBI(slot).encode())
-        self.id = base64.b64encode(digest.finalize()).decode()
+            digest = hashes.Hash(hashes.MD5(), backend=default_backend())
+            digest.update(self.cc.PTEID_GetBI(slot).encode())
+            self.id = base64.b64encode(digest.finalize()).decode()
 
-        self.mylogger.log(INFO, "Client ID: {}".format(self.id))
+            self.mylogger.log(INFO, "Client ID: {}".format(self.id))
 
-        # calculate md5 digest of the citizen card number (id of the user)
-        certop = CertificateOperations()
-        certop.getCertfromPem(cert)
-        self.client_pubk = certop.getPubKey().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
+            # calculate md5 digest of the citizen card number (id of the user)
+            certop = CertificateOperations()
+            certop.getCertfromPem(cert)
+            self.client_pubk = certop.getPubKey().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
 
-        # send client certificate and id to repository
-        msg = json.dumps({'c_pubk': self.client_pubk.decode(), 'id': self.id})
-        self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
-        bytes = self.sock.sendto(msg.encode(), (self.host, self.port_repo))
-        data1, address = self.sock.recvfrom(MAX_BUFFER_SIZE)
-        print("> repository pubkey received")
-        self.mylogger.log(INFO, "Repo Pubkey received")
+            # send client certificate and id to repository
+            msg = json.dumps({'c_pubk': self.client_pubk.decode(), 'id': self.id})
+            self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
+            bytes = self.sock.sendto(msg.encode(), (self.host, self.port_repo))
+            data1, address = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            print("> repository pubkey received")
+            self.mylogger.log(INFO, "Repo Pubkey received")
 
-        # send client certificate and id to manager
-        self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
-        bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
-        data2, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-        print("> manager pubkey received")
-        self.mylogger.log(INFO, "Manager Pubkey received")
+            # send client certificate and id to manager
+            self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
+            bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
+            data2, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            print("> manager pubkey received")
+            self.mylogger.log(INFO, "Manager Pubkey received")
 
-        data1 = json.loads(data1)
-        data2 = json.loads(data2)
+            data1 = json.loads(data1)
+            data2 = json.loads(data2)
 
-        # store repository and manager public key in global variable
-        # self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
-        # self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
-        self.repo_pubkey = data1['repo_pubk']
-        self.man_pubkey = data2['man_pubk']
+            # store repository and manager public key in global variable
+            # self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
+            # self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
+            self.repo_pubkey = data1['repo_pubk']
+            self.man_pubkey = data2['man_pubk']
 
-        # save the repository and manager address
-        if 'repo_pubk' in data1:
-            self.repo_address = address
-        if 'man_pubk' in data2:
-            self.man_address = server
+            # save the repository and manager address
+            if 'repo_pubk' in data1:
+                self.repo_address = address
+            if 'man_pubk' in data2:
+                self.man_address = server
 
-        self.mylogger.log(INFO, "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
-        self.loop()
+            self.mylogger.log(INFO, "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
+            self.loop()
+        except:
+            print("Cannot start client")
+            raise
 
     # menu of the client
     def loop(self):
-        self.mylogger.log(INFO, "Entered Client Menu")
-        while (True):
-            print("\n----Menu----\n1) Create auction\n2) Place bid\n3) Check receipt\n4) List active auctions\n"
-                  "5) List closed auctions\n6) Display bids of an auction\n7) Display bids of a client\n8) Validate"
-                  " receipt\n9) Display my information\n10) Close")
+        try:
+            self.mylogger.log(INFO, "Entered Client Menu")
+            while (True):
+                print("\n----Menu----\n1) Create auction\n2) Place bid\n3) Check receipt\n4) List active auctions\n"
+                      "5) List closed auctions\n6) Display bids of an auction\n7) Display bids of a client\n8) Validate"
+                      " receipt\n9) Display my information\n10) Close")
 
-            option = input(">")
+                option = input(">")
 
-            if option == '1':
-                self.create_auction()
-            elif option == '2':
-                self.place_bid()
-            elif option == '3':
-                self.check_receipt()
-            elif option == '4':
-                self.list_active_auctions()
-            elif option == '5':
-                self.list_closed_auctions()
-            elif option == '6':
-                self.bids_auction()
-            elif option == '7':
-                self.bids_client()
-            elif option == '8':
-                self.validate_receipt()
-            elif option == '9':
-                self.display_client()
-            elif option == '10':
-                self.exit(0)
-            else:
-                print("Not a valid option!\n")
+                if option == '1':
+                    self.create_auction()
+                elif option == '2':
+                    self.place_bid()
+                elif option == '3':
+                    self.check_receipt()
+                elif option == '4':
+                    self.list_active_auctions()
+                elif option == '5':
+                    self.list_closed_auctions()
+                elif option == '6':
+                    self.bids_auction()
+                elif option == '7':
+                    self.bids_client()
+                elif option == '8':
+                    self.validate_receipt()
+                elif option == '9':
+                    self.display_client()
+                elif option == '10':
+                    self.exit(0)
+                else:
+                    print("Not a valid option!\n")
+        except:
+            print("Exception on client's loop")
+            raise
 
     # send new auction parameters to manager - done
     def create_auction(self):
@@ -236,6 +244,7 @@ class Client:
         except:
             print("Cannot contact the manager")
             raise
+        
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):
         try:
@@ -260,7 +269,7 @@ class Client:
 
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
-                        print("Auction requested does not exist")
+                        print("\nAuction requested does not exist")
 
                     else:
                         # calculate proof-of-work and send the answer to the server
@@ -378,6 +387,7 @@ class Client:
         except:
             print("Bid was not created")
             raise
+
 
     # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
@@ -552,19 +562,23 @@ class Client:
 
     # shutdown the socket
     def exit(self, type):
+        try:
 
-        msg = {'payload': {'exit': 'client exit', 'id': self.id}}
+            msg = {'payload': {'exit': 'client exit', 'id': self.id}}
 
-        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
-        msg['signature'] = signature
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
 
-        sent = self.sock.sendto(json.dumps(msg).encode(), self.man_address)
-        sent = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+            sent = self.sock.sendto(json.dumps(msg).encode(), self.man_address)
+            sent = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-        self.mylogger.log(INFO, "Exiting Client")
-        print("Exiting...")
-        self.sock.close()
-        sys.exit(type)
+            self.mylogger.log(INFO, "Exiting Client")
+            print("Exiting...")
+            self.sock.close()
+            sys.exit(type)
+        except:
+            print("Cannot exit client")
+            raise
 
 
 if __name__ == "__main__":
