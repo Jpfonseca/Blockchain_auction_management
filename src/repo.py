@@ -1,4 +1,7 @@
+import hashlib
 import os, datetime, sys, json, base64, re, copy
+import random
+import string
 
 from os import listdir
 from ast import literal_eval
@@ -118,7 +121,7 @@ class Repository():
                 time_limit = re.findall('\d+', auction.time_limit)
                 time_limit = (int(time_limit[0]) * 3600) + (int(time_limit[1]) * 60) + int(time_limit[2])
 
-                print("> {} seconds have passed on auction {}".format(auction.serial, seconds))
+                print("info: {} seconds have passed on auction {}".format(seconds,auction.serial))
 
                 # alert manager that the auction has ended. It will then calculate the winner
                 if seconds > time_limit:
@@ -287,7 +290,7 @@ class Repository():
             msg['signature'] = signature
             bytes = self.sock.sendto(json.dumps(msg).encode(), addr)
 
-    # send the size of the hash to be calculated (proof-of-work)
+    # send the proof-of-work to client. The cryptopuzzle is a hash-cash
     def send_pow(self, address_client, data):
         try:
             type = ""
@@ -304,10 +307,38 @@ class Repository():
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
             else:
-                msg = {'payload': {'size': '7', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
+
+                r_string = ''.join(
+                    random.choice(string.digits + string.ascii_lowercase + string.ascii_uppercase) for c in range(6))
+
+                msg = {'payload': {'ack': 'ok', 'r_string': r_string, 'numZeros': '5', 'type': type,
+                                   'hash_prev': self.hash_prev[data['serial']]}}
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
+                # receive proof-of-work answer from client
+                data2, addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
+                data2 = json.loads(data2)
+
+                signature = base64.b64decode(data2['signature'])
+                if self.crypto.verifySignatureCC(self.pubkey_dict[data2['payload']['id']],
+                                                 json.dumps(data2['payload']), signature):
+
+                    print("> proof-of-work result of client: " + json.dumps(data2['payload']['digest']))
+
+                    hash_object = hashlib.sha256(data2['payload']['string'].encode('utf-8'))
+                    digest = hash_object.hexdigest()
+
+                    if data2['payload']['digest'] == digest:
+                        msg2 = {'payload': {'ack': 'ok', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
+                    else:
+                        msg2 = {'payload': {'ack': 'nok'}}
+
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg2['payload']))).decode()
+                    msg2['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
+
         except:
             print("Cannot send proof-of-work size")
             raise

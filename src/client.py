@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json, random, string, sys, base64, datetime
 import os
 from socket import *
@@ -81,6 +82,8 @@ class Client:
         # get cc certificate (bytes)
         cert = self.cc.PTEID_GetCertificate(self.slot)
         self.client_cert = cert
+
+        self.name = self.cc.GetNameFromCERT(cert)
 
         digest = hashes.Hash(hashes.MD5(), backend=default_backend())
         digest.update(self.cc.PTEID_GetBI(slot).encode())
@@ -246,6 +249,7 @@ class Client:
             msg['signature'] = signature
             bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
+            # receive proof-of-work from repo server
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
 
@@ -258,97 +262,119 @@ class Client:
                     if data['payload']['ack'] == 'nok':
                         print("Auction requested does not exist")
 
-                else:
-                    # calculate proof-of-work
-                    answer = self.get_pow(data['payload']['size'])
+                    else:
+                        # calculate proof-of-work and send the answer to the server
+                        string, digest = self.hash_cash(data['payload']['r_string'], int(data['payload']['numZeros']))
 
-                    # encrypt cert with symmetric key and symmetric key with manager pubkey
-                    bid_key = Fernet.generate_key()
-                    f = Fernet(bid_key)
+                        print("Digest: " + digest)
 
-                    # certs and symmetric keys are saved in base64 format
-                    encryptedSymCert = base64.b64encode(f.encrypt(self.client_cert)).decode()
-                    encryptedSymKey = base64.b64encode(
-                        self.crypto.RSAEncryptData(self.crypto.loadPubk(self.man_pubkey), bid_key)).decode()
+                        msg = {'payload': {'string': string, 'digest': digest, 'id': self.id}}
+                        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+                        msg['signature'] = signature
+                        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-                    # send bid parameters depending on auction type
-                    type = data['payload']['type']
-                    # time of creation of bid
-                    date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+                        # receive ack or nack of the proof-of-work
+                        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+                        data = json.loads(data)
 
-                    if type == 'e':
-                        msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'hash_prev': data['payload']['hash_prev'],
-                                                   'amount': amount, 'name': "", 'id': self.id, 'timestamp': date_time}}}
+                        signature = base64.b64decode(data['signature'])
+                        payload = json.dumps(data['payload'])
+                        if self.validSignature(self.repo_pubkey, payload, signature):
+                            if data['payload']['ack'] == 'ok':
+                                print("Cryptopuzzle result accepted by the server")
 
-                    elif type == 'b':
-                        encryptedAmount = base64.b64encode(f.encrypt(amount.encode())).decode()
-                        msg = {'payload': {'bid': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': serial,
-                                                   'hash': answer, 'hash_prev': data['payload']['hash_prev'],
-                                                   'amount': encryptedAmount, 'name': "", 'id': self.id,
-                                                   'timestamp': date_time}}}
+                                # encrypt cert with symmetric key and symmetric key with manager pubkey
+                                bid_key = Fernet.generate_key()
+                                f = Fernet(bid_key)
 
-                    signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
-                    msg['payload']['sig_c'] = signature
+                                # certs and symmetric keys are saved in base64 format
+                                encrypted_cert = base64.b64encode(f.encrypt(self.client_cert)).decode()
+                                encrypted_key = base64.b64encode(
+                                    self.crypto.RSAEncryptData(self.crypto.loadPubk(self.man_pubkey), bid_key)).decode()
 
-                    # {'payload': {'bid': {...}, 'sig_c': signature}, 'signature': signature}
-                    bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+                                # send bid parameters depending on auction type
+                                type = data['payload']['type']
+                                # time of creation of bid
+                                date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
-                    # receive ack or nack of the bid creation
-                    data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-                    data = json.loads(data)
+                                hash = str(random.randint(1, 100))
 
-                    signature = base64.b64decode(data['signature'])
-                    payload = json.dumps(data['payload'])
-                    if self.validSignature(self.repo_pubkey, payload, signature):
-                        if data['payload']['ack'] == 'ok':
+                                if type == 'e':
+                                    msg = {'payload': {'bid': {'key': encrypted_key, 'cert': encrypted_cert, 'serial': serial,
+                                                               'hash': hash, 'hash_prev': data['payload']['hash_prev'],
+                                                               'amount': amount, 'name': "", 'id': self.id, 'timestamp': date_time}}}
 
-                            repo_valid = False
-                            manager_valid = False
-                            client_valid = False
+                                elif type == 'b':
+                                    encrypted_amount = base64.b64encode(f.encrypt(amount.encode())).decode()
+                                    msg = {'payload': {'bid': {'key': encrypted_key, 'cert': encrypted_cert, 'serial': serial,
+                                                               'hash': hash, 'hash_prev': data['payload']['hash_prev'],
+                                                               'amount': encrypted_amount, 'name': "", 'id': self.id,
+                                                               'timestamp': date_time}}}
 
-                            # validate received receipt and store it in a file
-                            print("Receipt validation:")
-                            data_v = copy.deepcopy(data['payload']['receipt'])
+                                signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+                                msg['payload']['sig_c'] = signature
 
-                            # verify repository signature
-                            signature = base64.b64decode(data_v.pop('sig_r'))
-                            if self.validSignature(self.repo_pubkey, json.dumps(data_v), signature):
-                                repo_valid = True
-                                print("Repository's signature -> valid")
+                                # {'payload': {'bid': {...}, 'sig_c': signature}, 'signature': signature}
+                                bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-                            # verify manager signature
-                            signature = base64.b64decode(data_v.pop('sig_m'))
-                            if self.validSignature(self.man_pubkey, json.dumps(data_v), signature):
-                                manager_valid = True
-                                print("Manager's signature -> valid")
+                                # receive ack or nack of the bid creation
+                                data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+                                data = json.loads(data)
 
-                            # verify client signature
-                            signature = base64.b64decode(data_v.pop('sig_c'))
-                            if self.crypto.verifySignatureCC(self.client_pubk, json.dumps(data_v), signature):
-                                client_valid = True
-                                print("Client's signature -> valid")
+                                signature = base64.b64decode(data['signature'])
+                                payload = json.dumps(data['payload'])
+                                if self.validSignature(self.repo_pubkey, payload, signature):
+                                    if data['payload']['ack'] == 'ok':
 
-                            if repo_valid and manager_valid and client_valid:
-                                if serial not in self.bid_keys:
-                                    self.bid_keys[serial] = {str(answer): bid_key}
-                                else:
-                                    self.bid_keys[serial][str(answer)] = bid_key
+                                        repo_valid = False
+                                        manager_valid = False
+                                        client_valid = False
 
-                                # save receipt in a file
-                                current_path = os.getcwd()
-                                file = "auction_{}_bid_{}.txt".format(serial, answer)
-                                path = "{}/receipts/{}".format(current_path, file)
-                                text_file = open(path, "w")
-                                text_file.write("%s\n" % json.dumps(data['payload']['receipt']))
+                                        # validate received receipt and store it in a file
+                                        print("\nReceipt validation:")
+                                        data_v = copy.deepcopy(data['payload']['receipt'])
 
-                                print("\nBid created successfully")
+                                        # verify repository signature
+                                        signature = base64.b64decode(data_v.pop('sig_r'))
+                                        if self.validSignature(self.repo_pubkey, json.dumps(data_v), signature):
+                                            repo_valid = True
+                                            print("Repository's signature -> valid")
+
+                                        # verify manager signature
+                                        signature = base64.b64decode(data_v.pop('sig_m'))
+                                        if self.validSignature(self.man_pubkey, json.dumps(data_v), signature):
+                                            manager_valid = True
+                                            print("Manager's signature -> valid")
+
+                                        # verify client signature
+                                        signature = base64.b64decode(data_v.pop('sig_c'))
+                                        if self.crypto.verifySignatureCC(self.client_pubk, json.dumps(data_v), signature):
+                                            client_valid = True
+                                            print("Client's signature -> valid")
+
+                                        if repo_valid and manager_valid and client_valid:
+                                            if serial not in self.bid_keys:
+                                                self.bid_keys[serial] = {str(hash): bid_key}
+                                            else:
+                                                self.bid_keys[serial][str(hash)] = bid_key
+
+                                            # save receipt in a file
+                                            current_path = os.getcwd()
+                                            file = "auction_{}_bid_{}.txt".format(serial, hash)
+                                            path = "{}/receipts/{}".format(current_path, file)
+                                            text_file = open(path, "w")
+                                            text_file.write("%s\n" % json.dumps(data['payload']['receipt']))
+
+                                            print("\nBid created successfully")
+                                        else:
+                                            print("Receipt signatures are not valid. Exiting compromised system...")
+                                            sys.exit(-1)
+                                    else:
+                                        print("\nBid not created")
+                                        self.exit(1)
                             else:
-                                print("Receipt signatures are not valid. Exiting compromised system...")
-                                sys.exit(-1)
-                        else:
-                            print("\nBid not created")
-                            self.exit(1)
+                                print("\n Bid not created, wrong result of proof-of-work")
+                                self.exit(1)
         except:
             print("Bid was not created")
             raise
@@ -477,30 +503,42 @@ class Client:
     def display_client(self):
         print("Name: {}, Id: {}".format(self.name, self.id))
 
-    # generate string with length = size
-    def gen_string(self, size):
-        self.mylogger.log(INFO, "Generating string")
-        answer = ''.join(
-            random.choice(string.digits + string.ascii_lowercase + string.ascii_uppercase) for c in range(size))
-        return answer
 
     # calculate the proof-of-work result
-    def get_pow(self, size):
-        self.mylogger.log(INFO, "Calculating proof-of-work with size {}".format(size))
+    def hash_cash(self, r_string, numZeros):
+        self.mylogger.log(INFO, "Calculating proof-of-work: hash with {} 1's".format(numZeros))
+        print("\n...calculating hash using hash-cash system")
 
-        result = False
-        solution = None
+        loop = True
+        ctr = 0
+        global string
 
-        print("\n...calculating proof-of-work with size {}".format(size))
+        # rand: String of random characters, encoded in base-64 format.
+        rand = base64.b64encode(
+            ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(30)).encode())
 
-        while result is False:
-            solution = self.gen_string(int(size))
+        while (loop):
+            ctr += 1
 
-            if solution.startswith("11"):
-                print("Answer: {}\n".format(solution))
-                result = True
+            solution = False
 
-        return solution
+            # hashes require a heavier computation
+            string = r_string + ":" + rand.decode() + ":" + str(ctr)
+            hash_object = hashlib.sha256(string.encode('utf-8'))
+            digest = hash_object.hexdigest()
+
+            # if first three values of hash are '0'
+            for i in range(0, int(numZeros)):
+                if digest[i] == "0":
+                    solution = True
+                else:
+                    solution = False
+                    break
+
+            if solution:
+                loop = False
+
+        return string, digest
 
     def validSignature(self, pubk, message, signature):
         try:

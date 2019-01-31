@@ -193,17 +193,17 @@ class Manager:
             f = Fernet(key)
             encryptedCert = base64.b64decode(msg['payload']['auction']['cert'])
             cert = f.decrypt(encryptedCert)
-            self.certops.getCertfromPem(cert)
-            cert_pubk = self.certops.getPubKey()
-            cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
-            # Pem
+            #self.certops.getCertfromPem(cert)
+            #cert_pubk = self.certops.getPubKey()
+            #cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
+
             message = {'payload': {'ack': 'nok'}}
 
             valid = True
 
-            if not cert_pubk == pubk.encode():
-                message['payload']['info'] = 'diff pubk'
-                valid = False
+            #if not cert_pubk == pubk.encode():
+                #message['payload']['info'] = 'diff pubk'
+                #valid = False
             #if not self.cc.verifyChainOfTrust(cert):
                 #message['payload']['info'] = 'cc cert not verified'
                 #valid = False
@@ -235,6 +235,20 @@ class Manager:
             # check if certificate is valid
             for auction in self.active_auctions:
                 if str(auction['serial']) == str(data['bid']['serial']):
+
+                    # decrypt symmetric key msg['key'] with manager private key
+                    encryptedKey = base64.b64decode(data['bid']['key'])
+                    key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
+
+                    # decrypt client's certificate msg['cert']
+                    f = Fernet(key)
+                    encryptedCert = base64.b64decode(data['bid']['cert'])
+                    cert = f.decrypt(encryptedCert)
+
+                    # if not self.cc.verifyChainOfTrust(cert):
+                    # message['payload']['info'] = 'cc cert not verified'
+                    # valid = False
+
                     # in english auction, check if the current amount bidded is higher than the previous
                     if auction['type'] == 'e':
                         if data['bid']['serial'] not in self.auction_amount:
@@ -274,7 +288,7 @@ class Manager:
                     signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
                     data['sig_m'] = signature
 
-                    msg = {'payload': {'valid': True, 'receipt': data}}
+                    msg = {'payload': {'valid': False, 'receipt': data}}
 
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
@@ -302,21 +316,18 @@ class Manager:
             bid = literal_eval(line)
 
             # decrypt symmetric key bid['key'] with manager private key
-            encryptedKey = base64.b64decode(bid['key'])
-            key = self.crypto.RSADecryptData(self.privateKey, encryptedKey)
+            encrypted_key = base64.b64decode(bid['key'])
+            key = self.crypto.RSADecryptData(self.privateKey, encrypted_key)
 
             # decrypt client's certificate
             f = Fernet(key)
-            encryptedCert = base64.b64decode(bid['cert'])
-            cert = f.decrypt(encryptedCert)
-            self.certops.getCertfromPem(cert)
-            cert_pubk = self.certops.getPubKey()
-            cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
+            encrypted_cert = base64.b64decode(bid['cert'])
+            cert = f.decrypt(encrypted_cert)
 
             # if auction type is 'b', must also decrypt the amount
             if type == 'b':
-                encryptedAmount = base64.b64decode(bid['amount'])
-                amount = f.decrypt(encryptedAmount).decode()
+                encrypted_amount = base64.b64decode(bid['amount'])
+                amount = f.decrypt(encrypted_amount).decode()
                 bid['amount'] = amount
 
             bid['name'] = self.cc.GetNameFromCERT(cert)
