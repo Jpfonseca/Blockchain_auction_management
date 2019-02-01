@@ -90,7 +90,7 @@ class Repository():
             print("> manager pubkey received")
             msg = json.dumps({'repo_pubk': self.repo_pubkey.decode()})
             bytes = self.sock.sendto(msg.encode(), self.manager_address)
-            self.mylogger.log(INFO, "Manager Pubkey received")
+            self.mylogger.log(INFO, "Manager public key received")
 
             # store the received manager public key in a global variable
             data1 = json.loads(data1)
@@ -99,18 +99,18 @@ class Repository():
             self.mylogger.log(INFO, "Man Pubkey : \n{}".format(self.man_pubkey))
 
             # 2) exchange public key with client
-            self.mylogger.log(INFO, "Exchanging cert/pubkey with the client")
+            self.mylogger.log(INFO, "Exchanging public key with the client")
             data2, client_addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
             print("> client pubkey received")
             bytes = self.sock.sendto(msg.encode(), client_addr)
-            self.mylogger.log(INFO, "Client Pubkey received")
+            self.mylogger.log(INFO, "Client public key received")
 
             data2 = json.loads(data2)
             self.client_login(data2, client_addr)
 
             self.loop()
         except:
-            print("Cannot start repository server")
+            self.mylogger.log(INFO, "Cannot start repository")
             raise
 
     # loop that waits for messages of manager or client
@@ -194,7 +194,7 @@ class Repository():
                     msg = json.dumps({'repo_pubk': self.repo_pubkey.decode()})
                     bytes = self.sock.sendto(msg.encode(), addr)
                     self.client_login(data, addr)
-                    self.loggedInClient += 1
+
                 else:
                     if 'auction' in data['payload']:
                         signature = base64.b64decode(data['signature'])
@@ -270,13 +270,14 @@ class Repository():
                         file = "auction{}.txt".format(auction.serial)
                         auction.save_to_file(file)
         except:
-            print("Exception on repository server's loop")
+            self.mylogger.log(INFO, "Exception on repository server's loop ")
             raise
 
     # create an auction according to the client's requested parameters
     def create_auction(self, addr, key, cert, serial, id, timestamp, name, timelimit, description, type, bidders=None,
                        limit_bids=None):
         try:
+            self.mylogger.log(INFO, "Create auction ")
             blockchain = Blockchain(key, cert, serial, id, timestamp, name, timelimit, description, type, bidders, limit_bids,
                                     state='active')
             self.serial = self.serial + 1
@@ -293,6 +294,7 @@ class Repository():
             bytes = self.sock.sendto(json.dumps(msg).encode(), addr)
 
         except:
+            self.mylogger.log(INFO, "Auction cannot be created ")
             print("> auction creation: NOT OK\n")
             msg = {'payload': {'ack': 'nok', 'info': 'auction', 'id': id}}
             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
@@ -302,6 +304,8 @@ class Repository():
     # send the proof-of-work to client. The cryptopuzzle is a hash-cash
     def send_pow(self, address_client, data):
         try:
+            self.mylogger.log(INFO, "Sending proof-of-work to client ")
+
             type = ""
             auction_exists = False
 
@@ -349,12 +353,14 @@ class Repository():
                     bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
 
         except:
-            print("Cannot send proof-of-work size")
+            print("Cannot send proof-of-work to client")
+            self.mylogger.log(INFO, "Cannot send proof-of-work to client ")
             raise
 
     # create a bid in an existent auction
     def place_bid(self, addr, data):
         try:
+            self.mylogger.log(INFO, "Place a bid ")
             client_address = addr
             for auction in self.active_auctions:
                 if data['bid']['serial'] == str(auction.serial):
@@ -396,7 +402,9 @@ class Repository():
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
                         else:
                             print("> bid creation in auction {}: NOK".format(auction.serial))
-                            msg = {'payload': {'ack': 'nok', 'info': 'bid'}}
+
+                            if 'info' in data2['payload']:
+                                msg = {'payload': {'ack': 'nok', 'info': data2['payload']['info']}}
 
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
@@ -412,11 +420,13 @@ class Repository():
 
         except:
             print("Cannot create bid")
+            self.mylogger.log(INFO, "Cannot create bid ")
             raise
 
     # list active auctions
     def list_open(self, address_client):
         try:
+            self.mylogger.log(INFO, "Listing active auctions")
             auctions = ""
             for auction in self.active_auctions:
                 auctions = auctions + str(auction.info_user()) + "\n"
@@ -433,12 +443,14 @@ class Repository():
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
         except:
-            print("Can't send active auctions")
+            print("Cannot send active auctions")
+            self.mylogger.log(INFO, "Cannot send active auctions ")
             raise
 
     # list closed auctions
     def list_closed(self, address_client):
         try:
+            self.mylogger.log(INFO, "Listing closed auctions ")
             auctions = ""
             for auction in self.closed_auctions:
                 auctions = auctions + str(auction.info_user()) + "\n"
@@ -457,11 +469,13 @@ class Repository():
 
         except:
             print("Can't send active auctions")
+            self.mylogger.log(INFO, "Cannot send active auctions ")
             raise
 
     # display all bids of an auction
     def bids_auction(self, address_client, serial):
         try:
+            self.mylogger.log(INFO, "Listing bids of auction {} ".format(serial))
             msg = {}
             i = 0
             result = None
@@ -491,11 +505,13 @@ class Repository():
 
         except:
             print("> cannot send list of bids of auction {}".format(serial))
+            self.mylogger.log(INFO, "Cannot list bids of auction {}".format(serial))
             raise
 
     # display all bids sent by a client
     def bids_client(self, address_client, id):
         try:
+            self.mylogger.log(INFO, "Listing bids of client {} ".format(id))
             msg = {}
             i = 0
             result = None
@@ -525,31 +541,48 @@ class Repository():
 
         except:
             print("> can't send list of bids of client {}".format(id))
+            self.mylogger.log(INFO, "Listing bids of client {} ".format(id))
             raise
 
     # send bid info to the client for him/her to check against the receipt
     def check_receipt(self, address_client, serial, hash):
-        print("> checking the validity of the receipt")
+        try:
+            self.mylogger.log(INFO, "Sending bid information for receipt validation ")
+            print("> sending bid information for receipt validation")
+            closed_auctions = False
 
-        for auction in self.closed_auctions:
-            if str(auction.serial) == serial:
-                info = auction.bid_info(hash)
+            for auction in self.closed_auctions:
+                if str(auction.serial) == serial:
+                    closed_auctions = True
+                    info = auction.bid_info(hash)
 
-                if info != "":
-                    msg = {'payload': {'bid': info}}
+                    if info != "":
+                        msg = {'payload': {'bid': info}}
+                    else:
+                        msg = {'payload': {'ack': 'nok', 'info': 'no info about bid'}}
+
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
                 else:
-                    msg = {'payload': {'ack': 'nok', 'info': 'no info about bid'}}
+                    msg = {'payload': {'ack': 'nok', 'info': 'the auction is not closed'}}
+
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
+            if not closed_auctions:
+                msg = {'payload': {'ack': 'nok', 'info': 'no closed auctions'}}
 
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
 
-            else:
-                msg = {'payload': {'ack': 'nok', 'info': 'no closed auction'}}
 
-                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
-                msg['signature'] = signature
-                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+        except:
+            print("> cannot send bid information for receipt validation")
+            self.mylogger.log(INFO, "Cannot send bid information for receipt validation ")
 
 
     def valid_signature(self, pubk, message, signature):
@@ -560,12 +593,14 @@ class Repository():
             return True
         except:
             print("Cannot validate signature")
+            self.mylogger.log(INFO, "Cannot validate signature ")
             raise
 
         # store client pubk
 
     def client_login(self, message, client_addr):
         try:
+            self.mylogger.log(INFO, "Adding new client ")
             cert = None
             if 'c_pubk' in message:
                 self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
@@ -574,17 +609,18 @@ class Repository():
                 self.address_client.append(client_addr)
         except:
             print("Cannot sign up new client")
+            self.mylogger.log(INFO, "Cannot signup new client ")
             raise
 
     # shutdown the socket
     def exit(self, type):
         try:
-            self.mylogger.log(INFO, "Exiting Repository")
+            self.mylogger.log(INFO, "Exiting repository ")
             print("Exiting...")
             self.sock.close()
             sys.exit(type)
         except:
-            print("Cannot exit repository server")
+            self.mylogger.log(INFO, "Cannot exit repository ")
             raise
 
 

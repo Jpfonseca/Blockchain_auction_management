@@ -2,6 +2,7 @@ from os import listdir
 from time import sleep
 import PyKCS11
 from PyKCS11 import PyKCS11Error, PyKCS11Lib, Mechanism
+import sys
 
 from OpenSSL.crypto import load_certificate, load_crl, FILETYPE_ASN1, FILETYPE_PEM, Error, X509Store, X509StoreContext,\
     X509StoreFlags, X509StoreContextError
@@ -496,10 +497,14 @@ class PortugueseCitizenCard:
         name = relativedistinguishedname._attributes[0].value
         return name
 
+
 if __name__ == '__main__':
     try:
         pteid = PortugueseCitizenCard()
         fullnames = pteid.getSmartcardsNames()
+
+        print("Version of python")
+        print(sys.version)
 
         slot = -1
         if len(pteid.sessions) > 0:
@@ -515,7 +520,6 @@ if __name__ == '__main__':
             if slot != i:
                 pteid.sessions[i].closeSession()
         print(pteid.PTEID_GetBI(slot))
-
 
         st1r = pteid.PTEID_GetCertificate(slot)
 

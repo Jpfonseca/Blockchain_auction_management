@@ -79,12 +79,12 @@ class Manager:
             print("Listening...")
 
             # 1) exchange public keys with the repository
-            self.mylogger.log(INFO, "Exchanging public Key with the Repo")
+            self.mylogger.log(INFO, "Exchanging public key with the Repo")
             msg = json.dumps({'man_pubk': self.man_pubkey.decode()})
             bytes = self.sock.sendto(msg.encode(), (self.host, PORT_REPO))
             print("> repository pubkey received")
             data1, self.repo_address = self.sock.recvfrom(MAX_BUFFER_SIZE)
-            self.mylogger.log(INFO, "Repo Pubkey received")
+            self.mylogger.log(INFO, "Repo public key received")
 
             # store the received repository public key in global variable
             data1 = json.loads(data1)
@@ -93,18 +93,18 @@ class Manager:
             self.mylogger.log(INFO, "Repo Pubkey : \n{}".format(self.repo_pubkey))
 
             # 2) exchange public key with client
-            self.mylogger.log(INFO, "Exchanging public Key with the Client")
+            self.mylogger.log(INFO, "Exchanging public key with the Client")
             data2, client_addr = self.sock.recvfrom(MAX_BUFFER_SIZE)
             print("> client pubkey received")
             bytes = self.sock.sendto(msg.encode(), client_addr)
-            self.mylogger.log(INFO, "Client Pubkey received")
+            self.mylogger.log(INFO, "Client public key received")
 
             data2 = json.loads(data2)
             self.client_login(data2, client_addr)
 
             self.loop()
         except:
-            print("Cannot start manager server")
+            self.mylogger.log(INFO, "Cannot start manager")
             raise
 
     # manager waits for client or repository messages
@@ -116,11 +116,12 @@ class Manager:
 
                 # add new client
                 if (addr not in self.address_client) and (addr != self.repo_address):
+                    self.mylogger.log(INFO, "Adding new client ")
                     print("> client pubkey received")
                     msg = json.dumps({'man_pubk': self.man_pubkey.decode()})
                     bytes = self.sock.sendto(msg.encode(), addr)
                     self.client_login(data2, addr)
-                    self.loggedInClient += 1
+
                 else:
                     if 'auction' in data2['payload']:
                         signature = base64.b64decode(data2['signature'])
@@ -173,11 +174,12 @@ class Manager:
                                 self.mylogger.log(INFO, "Exiting Manager")
                                 self.exit(0)
         except:
-            print("Exception on manager server's loop")
+            self.mylogger.log(INFO, "Exception on manager's loop")
             raise
 
     def create_auction(self, msg, addr):
         try:
+            self.mylogger.log(INFO, "Receiving auction request")
             # {'payload':{'key':key,'cert',cert,'auction':{...}}, 'signature': signature}
             id = msg['payload']['auction']['id']
             self.clients_address[id] = addr
@@ -235,10 +237,12 @@ class Manager:
                 bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
         except:
             print("Cannot create auction")
+            self.mylogger.log(INFO, "Cannot create auction")
             raise
 
     def validate_bid(self, data, addr):
         try:
+            self.mylogger.log(INFO, "Validating bid")
             # check if certificate is valid
             for auction in self.active_auctions:
                 if str(auction['serial']) == str(data['bid']['serial']):
@@ -265,12 +269,10 @@ class Manager:
                             self.auction_amount[data['bid']['serial']] = data['bid']['amount']
 
                             if int(self.auction_amount[data['bid']['serial']]) < int(previous_amount):
-                                msg = {'payload': {'valid': False}}
+                                msg = {'payload': {'valid': False, 'info': 'amount smaller than previous'}}
                                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                                 msg['signature'] = signature
                                 sent = self.sock.sendto(json.dumps(msg).encode(), addr)
-
-                    valid = False
 
                     # erro aqui, key_error limit bids
                     if 'bidders' in data['bid'] or 'limit_bids' in data['bid']:
@@ -306,10 +308,12 @@ class Manager:
                     sent = self.sock.sendto(json.dumps(msg).encode(), addr)
         except:
             print("Cannot validate bid")
+            self.mylogger.log(INFO, "Cannot validate bid")
             raise
 
     def get_winner(self, data):
         try:
+            self.mylogger.log(INFO, "Computing winner of the auction")
             winner_dict = {}
             result = []
             serial = 0
@@ -387,16 +391,23 @@ class Manager:
 
         except:
             print("Cannot get winner of the auction")
+            self.mylogger.log(INFO, "Cannot get winner of auction")
             raise
 
     # verify client's cert, store client's certificate in dictionary with 'id' keys
     def client_login(self, message, client_addr):
-        cert = None
-        if 'c_pubk' in message:
-            self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
-            self.loggedInClient += 1
-            self.pubkey_dict[message['id']] = message['c_pubk']
-            self.address_client.append(client_addr)
+        try:
+            self.mylogger.log(INFO, "Adding new client ")
+            cert = None
+            if 'c_pubk' in message:
+                self.mylogger.log(INFO, "Client Pubkey : \n{}".format(message['c_pubk']))
+                self.loggedInClient += 1
+                self.pubkey_dict[message['id']] = message['c_pubk']
+                self.address_client.append(client_addr)
+        except:
+            print("Cannot sign up new client")
+            self.mylogger.log(INFO, "Cannot signup new client ")
+            raise
 
     def valid_signature(self, pubk, message, signature):
         try:
@@ -411,12 +422,12 @@ class Manager:
     # shutdown the socket
     def exit(self, type):
         try:
-            self.mylogger.log(INFO, "Exiting Repository")
+            self.mylogger.log(INFO, "Exiting Manager")
             print("Exiting...")
             self.sock.close()
             sys.exit(type)
         except:
-            print("Cannot exit manager server")
+            self.mylogger.log(INFO, "Cannot exit manager ")
             raise
 
 if __name__ == "__main__":

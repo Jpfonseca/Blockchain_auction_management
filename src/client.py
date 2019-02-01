@@ -132,13 +132,13 @@ class Client:
             self.mylogger.log(INFO, "Repo Pubkey : \n{}\nManager Pubkey : \n{}".format(self.repo_pubkey, self.man_pubkey))
             self.loop()
         except:
-            print("Cannot start client")
+            self.mylogger.log(INFO, "Cannot start client")
             raise
 
     # menu of the client
     def loop(self):
         try:
-            self.mylogger.log(INFO, "Entered Client Menu")
+            self.mylogger.log(INFO, "Entered Client Menu ")
             while (True):
                 print("\n----Menu----\n1) Create auction\n2) Place bid\n3) List active auctions\n"
                       "4) List closed auctions\n5) Display bids of an auction\n6) Display bids of a client\n"
@@ -167,13 +167,13 @@ class Client:
                 else:
                     print("Not a valid option!\n")
         except:
-            print("Exception on client's loop")
+            self.mylogger.log(INFO, "Exception on client's loop")
             raise
 
     # send new auction parameters to manager - done
     def create_auction(self):
         try:
-            self.mylogger.log(INFO, "Creating auction")
+            self.mylogger.log(INFO, "Creating auction ")
 
             name = input("Name: ")
             time_limit = input("Time limit: ")  # format: 0h0m30s
@@ -227,7 +227,7 @@ class Client:
             signature = base64.b64decode(data['signature'])
             ack = json.dumps(data['payload'])
 
-            if self.validSignature(self.man_pubkey, ack, signature):
+            if self.valid_signature(self.man_pubkey, ack, signature):
                 if data['payload']['ack'] == 'ok':
                     # store the symmetric key of the current auction
                     self.auction_keys[data['payload']['serial']] = key
@@ -239,7 +239,8 @@ class Client:
                 print("Manager Pubk not verified")
                 self.exit(1)
         except:
-            print("Cannot contact the manager")
+            print("Cannot create auction")
+            self.mylogger.log(INFO, "Cannot create auction")
             raise
 
     # request a bid, calculate proof-of-work, send parameters to repository
@@ -262,7 +263,7 @@ class Client:
             # validate repo signature and send bid parameters
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
-            if self.validSignature(self.repo_pubkey, payload, signature):
+            if self.valid_signature(self.repo_pubkey, payload, signature):
 
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
@@ -285,7 +286,7 @@ class Client:
 
                         signature = base64.b64decode(data['signature'])
                         payload = json.dumps(data['payload'])
-                        if self.validSignature(self.repo_pubkey, payload, signature):
+                        if self.valid_signature(self.repo_pubkey, payload, signature):
                             if data['payload']['ack'] == 'ok':
                                 print("Cryptopuzzle result accepted by the server")
 
@@ -334,7 +335,7 @@ class Client:
 
                                 signature = base64.b64decode(data['signature'])
                                 payload = json.dumps(data['payload'])
-                                if self.validSignature(self.repo_pubkey, payload, signature):
+                                if self.valid_signature(self.repo_pubkey, payload, signature):
                                     if data['payload']['ack'] == 'ok':
 
                                         repo_valid = False
@@ -347,13 +348,13 @@ class Client:
 
                                         # verify repository signature
                                         signature = base64.b64decode(data_v.pop('sig_r'))
-                                        if self.validSignature(self.repo_pubkey, json.dumps(data_v), signature):
+                                        if self.valid_signature(self.repo_pubkey, json.dumps(data_v), signature):
                                             repo_valid = True
                                             print("Repository's signature -> valid")
 
                                         # verify manager signature
                                         signature = base64.b64decode(data_v.pop('sig_m'))
-                                        if self.validSignature(self.man_pubkey, json.dumps(data_v), signature):
+                                        if self.valid_signature(self.man_pubkey, json.dumps(data_v), signature):
                                             manager_valid = True
                                             print("Manager's signature -> valid")
 
@@ -382,71 +383,85 @@ class Client:
                                             sys.exit(-1)
                                     else:
                                         print("\nBid not created")
-                                        self.exit(1)
+                                        self.mylogger.log(INFO, "Bid was not created")
+                                        if 'info' in data['payload']:
+                                            print("info: " + data['payload']['info'])
                             else:
                                 print("\n Bid not created, wrong result of proof-of-work")
+                                self.mylogger.log(INFO, "Bid was not created")
                                 self.exit(1)
         except:
             print("Bid was not created")
+            self.mylogger.log(INFO, "Bid was not created")
             raise
 
     # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
-        self.mylogger.log(INFO, "Checking Receipt ")
+        try:
+            self.mylogger.log(INFO, "Checking Receipt ")
 
-        serial = input("Auction:")
-        hash = input("Bid: ")
+            serial = input("Auction:")
+            hash = input("Bid: ")
 
-        # load the auction file and calculate the winner
-        file = "auction_{}_bid_{}.txt".format(serial, hash)
-        current_path = os.getcwd()
-        path = "{}/receipts/{}".format(current_path, file)
+            # load the auction file and calculate the winner
+            file = "auction_{}_bid_{}.txt".format(serial, hash)
+            current_path = os.getcwd()
+            path = "{}/receipts/{}".format(current_path, file)
 
-        with open(path) as f:
-            lines = f.readlines()
+            with open(path) as f:
+                lines = f.readlines()
 
-        receipt_dict = literal_eval(lines[0])
+            receipt_dict = literal_eval(lines[0])
 
-        hash_str = receipt_dict['bid']['key'] + receipt_dict['bid']['cert'] + receipt_dict['bid']['serial'] +\
-                   receipt_dict['bid']['hash_prev'] + receipt_dict['bid']['amount'] + receipt_dict['bid']['name'] +\
-                   receipt_dict['bid']['id'] + receipt_dict['bid']['timestamp']
+            hash_str = receipt_dict['bid']['key'] + receipt_dict['bid']['cert'] + receipt_dict['bid']['serial'] +\
+                       receipt_dict['bid']['hash_prev'] + receipt_dict['bid']['amount'] + receipt_dict['bid']['name'] +\
+                       receipt_dict['bid']['id'] + receipt_dict['bid']['timestamp']
 
-        digest = hashlib.md5(hash_str.encode()).hexdigest()
+            digest = hashlib.md5(hash_str.encode()).hexdigest()
 
-        # send request of bid information for comparison with receipt
-        msg = {'payload': {'command': 'check_receipt', 'id': self.id, 'serial': serial, 'hash': hash}}
-        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
-        msg['signature'] = signature
-        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+            # send request of bid information for comparison with receipt
+            msg = {'payload': {'command': 'check_receipt', 'id': self.id, 'serial': serial, 'hash': hash}}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-        # get the information stored on the repository server
-        data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
-        data = json.loads(data)
+            # get the information stored on the repository server
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            data = json.loads(data)
 
-        signature = base64.b64decode(data['signature'])
-        payload = json.dumps(data['payload'])
+            signature = base64.b64decode(data['signature'])
+            payload = json.dumps(data['payload'])
 
-        if self.validSignature(self.repo_pubkey, payload, signature):
-            data = data['payload']
+            if self.valid_signature(self.repo_pubkey, payload, signature):
 
-            bid = data['bid']
+                if 'info' not in data['payload']:
+                    data = data['payload']
 
-            print(json.dumps(bid))
+                    bid = data['bid']
 
-            repo_info = bid['key'] + bid['cert'] + bid['serial'] + bid['hash_prev'] + \
-                        bid['amount'] + bid['id'] + bid['timestamp']
+                    print(json.dumps(bid))
 
-            digest_repo = hashlib.md5(repo_info.encode()).hexdigest()
+                    repo_info = bid['key'] + bid['cert'] + bid['serial'] + bid['hash_prev'] + \
+                                bid['amount'] + bid['id'] + bid['timestamp']
 
-            print("Hash computed from receipt: " + digest)
-            print("Hash computed from repository information: " + digest_repo)
+                    digest_repo = hashlib.md5(repo_info.encode()).hexdigest()
 
-            if digest == digest_repo:
-                print("\nThe receipt's information is identical to the information stored on the server")
-            else:
-                print("\nThe receipt's information is NOT identical to the information stored on the server")
-                print(data['info'])
-                self.exit(0)
+                    print("Hash computed from receipt: " + digest)
+                    print("Hash computed from repository information: " + digest_repo)
+
+                    if digest == digest_repo:
+                        print("\nThe receipt's information is identical to the information stored on the server")
+                    else:
+                        print("\nThe receipt's information is NOT identical to the information stored on the server")
+                        print(data['info'])
+                        self.exit(0)
+                else:
+                    print("info: " + data['payload']['info'])
+
+        except:
+            print("Cannot check the receipt")
+            self.mylogger.log(INFO, "Cannot check the receipt")
+            raise
 
     # list active auctions
     def list_active_auctions(self):
@@ -463,7 +478,7 @@ class Client:
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
 
-            if self.validSignature(self.repo_pubkey, payload, signature):
+            if self.valid_signature(self.repo_pubkey, payload, signature):
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
                         print("\nNo active auctions at the moment")
@@ -471,7 +486,7 @@ class Client:
                     print(data['payload'])
         except:
             print("Can't list active auctions")
-            self.mylogger.log(INFO, "Can't list active auctions")
+            self.mylogger.log(INFO, "Cannot list active auctions")
             raise
 
     # list closed auctions
@@ -489,21 +504,22 @@ class Client:
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
 
-            if self.validSignature(self.repo_pubkey, payload, signature):
+            if self.valid_signature(self.repo_pubkey, payload, signature):
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
                         print("\nNo closed auctions at the moment")
                 else:
                     print(data['payload'])
         except:
-            print("Can't list closed auctions")
-            self.mylogger.log(INFO, "Can't list closed auctions")
+            print("Cannot list closed auctions")
+            self.mylogger.log(INFO, "Cannot list closed auctions ")
             raise
 
     # list all bids of an auction
     def bids_auction(self):
         try:
             serial = input("Serial number of auction:")
+            self.mylogger.log(INFO, "Listing bids of an auction {}".format(serial))
 
             msg = {'payload': {'command': 'bid_auction', 'serial': serial, 'id': self.id}}
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
@@ -516,7 +532,7 @@ class Client:
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
 
-            if self.validSignature(self.repo_pubkey, payload, signature):
+            if self.valid_signature(self.repo_pubkey, payload, signature):
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
                         print("Auction has no bids")
@@ -525,13 +541,15 @@ class Client:
                     for key in data['payload'].keys():
                         print(data['payload'][key] + "\n")
         except:
-            print("Cannot list of bids of an auction")
+            print("Cannot list bids of an auction")
+            self.mylogger.log(INFO, "Cannot list bids of an auction")
             raise
 
     # list all bids of a client
     def bids_client(self):
         try:
             id = input("Id of the client:")
+            self.mylogger.log(INFO, "Listing bids of client {}".format(id))
 
             msg = {'payload': {'command': 'bid_client', 'c_id': id, 'id': self.id}}
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
@@ -544,7 +562,7 @@ class Client:
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
 
-            if self.validSignature(self.repo_pubkey, payload, signature):
+            if self.valid_signature(self.repo_pubkey, payload, signature):
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
                         print("Client has no bids")
@@ -555,49 +573,58 @@ class Client:
 
         except:
             print("Cannot show bids of auction")
+            self.mylogger.log(INFO, "Cannot show bids of auction")
             raise
 
     def display_client(self):
-        print("Name: {}, Id: {}".format(self.name, self.id))
-
+        try:
+            self.mylogger.log(INFO, "Displaying client's information")
+            print("Name: {}, Id: {}".format(self.name, self.id))
+        except:
+            print("Cannot display client's information")
+            self.mylogger.log(INFO, "Cannot display client's information")
+            raise
 
     # calculate the proof-of-work result
     def hash_cash(self, r_string, numZeros):
-        self.mylogger.log(INFO, "Calculating proof-of-work: hash with {} 1's".format(numZeros))
-        print("\n...calculating hash using hash-cash system")
+        try:
+            self.mylogger.log(INFO, "Calculating proof-of-work: digest with {} zeros".format(numZeros))
+            print("\n...calculating hash using hash-cash system")
 
-        loop = True
-        ctr = 0
-        global string
+            loop = True
+            ctr = 0
 
-        # rand: String of random characters, encoded in base-64 format.
-        rand = base64.b64encode(
-            ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(30)).encode())
+            # rand: String of random characters, encoded in base-64 format
+            rand = base64.b64encode(
+                ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(30)).encode())
 
-        while (loop):
-            ctr += 1
+            while (loop):
+                ctr += 1
 
-            solution = False
+                solution = False
 
-            # hashes require a heavier computation
-            string = r_string + ":" + rand.decode() + ":" + str(ctr)
-            hash_object = hashlib.sha256(string.encode('utf-8'))
-            digest = hash_object.hexdigest()
+                # hashes require a heavier computation
+                _string = r_string + ":" + rand.decode() + ":" + str(ctr)
+                hash_object = hashlib.sha256(_string.encode('utf-8'))
+                digest = hash_object.hexdigest()
 
-            # if first three values of hash are '0'
-            for i in range(0, int(numZeros)):
-                if digest[i] == "0":
-                    solution = True
-                else:
-                    solution = False
-                    break
+                # if first three values of hash are '0'
+                for i in range(0, int(numZeros)):
+                    if digest[i] == "0":
+                        solution = True
+                    else:
+                        solution = False
+                        break
 
-            if solution:
-                loop = False
+                if solution:
+                    loop = False
 
-        return string, digest
+            return _string, digest
+        except:
+            self.mylogger.log(INFO, "Exception on hash cash")
+            raise
 
-    def validSignature(self, pubk, message, signature):
+    def valid_signature(self, pubk, message, signature):
         try:
             pubk = self.crypto.loadPubk(pubk)
             if not self.crypto.verifySignatureServers(pubk, message, signature):
@@ -605,12 +632,13 @@ class Client:
             return True
         except:
             print("Cannot validate signature")
+            self.mylogger.log(INFO, "Cannot validate signature")
             raise
 
     # shutdown the socket
     def exit(self, type):
         try:
-
+            self.mylogger.log(INFO, "Exiting client")
             msg = {'payload': {'exit': 'client exit', 'id': self.id}}
 
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
@@ -624,7 +652,7 @@ class Client:
             self.sock.close()
             sys.exit(type)
         except:
-            print("Cannot exit client")
+            self.mylogger.log(INFO, "Cannot exit client")
             raise
 
 
