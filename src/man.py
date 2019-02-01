@@ -271,8 +271,12 @@ class Manager:
                                 sent = self.sock.sendto(json.dumps(msg).encode(), addr)
 
                     valid = False
-                    if 'bidders' in auction or 'limit_bids' in auction:
+
+                    # erro aqui, key_error limit bids
+                    if 'bidders' in data['bid'] or 'limit_bids' in data['bid']:
                         # bidders: limit number of bidders to certain identities
+                        print(auction)
+
                         bidders = auction['bidders'].split(',')  # format: ['1','2',...]
 
                         # limit_bids = limit number of bids performed by each identity
@@ -346,14 +350,9 @@ class Manager:
                 # add the current bid to the result list (that will saved to the file)
                 result.append(str(bid))
 
-            result = zip(winner_dict.values(), winner_dict.keys())
-
-            # Converting itertor to list
-            result = list(result)
-
             if result:
                 # calculate the winner of the auction
-                winner = max(zip)
+                winner = max(zip(winner_dict.values(), winner_dict.keys()))
 
                 # store the identity of the winner in the auction
                 auction_dict['winner'] = winner[1]
@@ -368,8 +367,6 @@ class Manager:
                     f.write("%s\n" % result[-1])
 
                     result.remove(result[-1])
-
-                    print(result)
 
                     # the other elements of the list are the bids
                     for line in result:

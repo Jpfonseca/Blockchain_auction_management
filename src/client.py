@@ -1,7 +1,6 @@
-import copy
-import hashlib
-import json, random, string, sys, base64, datetime
+import copy, hashlib, json, random, string, sys, base64, datetime
 import os
+from ast import literal_eval
 from socket import *
 
 from logging import DEBUG, ERROR, INFO
@@ -141,9 +140,9 @@ class Client:
         try:
             self.mylogger.log(INFO, "Entered Client Menu")
             while (True):
-                print("\n----Menu----\n1) Create auction\n2) Place bid\n3) Check receipt\n4) List active auctions\n"
-                      "5) List closed auctions\n6) Display bids of an auction\n7) Display bids of a client\n8) Validate"
-                      " receipt\n9) Display my information\n10) Close")
+                print("\n----Menu----\n1) Create auction\n2) Place bid\n3) List active auctions\n"
+                      "4) List closed auctions\n5) Display bids of an auction\n6) Display bids of a client\n"
+                      "7) Check receipt\n8) Display my information\n9) Close")
 
                 option = input(">")
 
@@ -152,20 +151,18 @@ class Client:
                 elif option == '2':
                     self.place_bid()
                 elif option == '3':
-                    self.check_receipt()
-                elif option == '4':
                     self.list_active_auctions()
-                elif option == '5':
+                elif option == '4':
                     self.list_closed_auctions()
-                elif option == '6':
+                elif option == '5':
                     self.bids_auction()
-                elif option == '7':
+                elif option == '6':
                     self.bids_client()
+                elif option == '7':
+                    self.check_receipt()
                 elif option == '8':
-                    self.validate_receipt()
-                elif option == '9':
                     self.display_client()
-                elif option == '10':
+                elif option == '9':
                     self.exit(0)
                 else:
                     print("Not a valid option!\n")
@@ -244,7 +241,7 @@ class Client:
         except:
             print("Cannot contact the manager")
             raise
-        
+
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):
         try:
@@ -306,7 +303,12 @@ class Client:
                                 # time of creation of bid
                                 date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
-                                hash = str(random.randint(1, 100))
+                                # hash of the block is the
+                                hash_str = str(encrypted_key) + str(encrypted_cert) + str(serial) + \
+                                    str(data['payload']['hash_prev']) + str(amount) + str(self.name) + str(self.id) + \
+                                    str(date_time)
+
+                                hash = hashlib.md5(hash_str.encode()).hexdigest()
 
                                 if type == 'e':
                                     msg = {'payload': {'bid': {'key': encrypted_key, 'cert': encrypted_cert, 'serial': serial,
@@ -388,13 +390,63 @@ class Client:
             print("Bid was not created")
             raise
 
-
     # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
         self.mylogger.log(INFO, "Checking Receipt ")
-        msg = json.dumps({'command': 'check_receipt', 'signature': 'oi'})
-        bytes = self.sock.sendto(msg.encode(), self.repo_address)
+
+        serial = input("Auction:")
+        hash = input("Bid: ")
+
+        # load the auction file and calculate the winner
+        file = "auction_{}_bid_{}.txt".format(serial, hash)
+        current_path = os.getcwd()
+        path = "{}/receipts/{}".format(current_path, file)
+
+        with open(path) as f:
+            lines = f.readlines()
+
+        receipt_dict = literal_eval(lines[0])
+
+        hash_str = receipt_dict['bid']['key'] + receipt_dict['bid']['cert'] + receipt_dict['bid']['serial'] +\
+                   receipt_dict['bid']['hash_prev'] + receipt_dict['bid']['amount'] + receipt_dict['bid']['name'] +\
+                   receipt_dict['bid']['id'] + receipt_dict['bid']['timestamp']
+
+        digest = hashlib.md5(hash_str.encode()).hexdigest()
+
+        # send request of bid information for comparison with receipt
+        msg = {'payload': {'command': 'check_receipt', 'id': self.id, 'serial': serial, 'hash': hash}}
+        signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+        msg['signature'] = signature
+        bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+
+        # get the information stored on the repository server
         data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+        data = json.loads(data)
+
+        signature = base64.b64decode(data['signature'])
+        payload = json.dumps(data['payload'])
+
+        if self.validSignature(self.repo_pubkey, payload, signature):
+            data = data['payload']
+
+            bid = data['bid']
+
+            print(json.dumps(bid))
+
+            repo_info = bid['key'] + bid['cert'] + bid['serial'] + bid['hash_prev'] + \
+                        bid['amount'] + bid['id'] + bid['timestamp']
+
+            digest_repo = hashlib.md5(repo_info.encode()).hexdigest()
+
+            print("Hash computed from receipt: " + digest)
+            print("Hash computed from repository information: " + digest_repo)
+
+            if digest == digest_repo:
+                print("\nThe receipt's information is identical to the information stored on the server")
+            else:
+                print("\nThe receipt's information is NOT identical to the information stored on the server")
+                print(data['info'])
+                self.exit(0)
 
     # list active auctions
     def list_active_auctions(self):
@@ -504,11 +556,6 @@ class Client:
         except:
             print("Cannot show bids of auction")
             raise
-
-    def validate_receipt(self):
-        print("Validating receipt")
-
-    # def validate_receipt()
 
     def display_client(self):
         print("Name: {}, Id: {}".format(self.name, self.id))

@@ -182,14 +182,6 @@ class Repository():
                                         self.all_auctions[a] = blockchain
                             else:
                                 print("> no bids on ended auction {} -> no possible winner".format(auction.serial))
-                                print(auction.info_user)
-                                for auction in self.closed_auctions:
-                                    print("closed" + auction.info_user())
-                                for auction in self.all_auctions:
-                                    print("all" + auction.info_user())
-                                for auction in self.active_auctions:
-                                    print("active" + auction.info_user())
-
                         else:
                             print("> couldn't find the winner")
 
@@ -262,7 +254,7 @@ class Repository():
                                 self.bids_client(addr, data2['c_id'])
                         elif 'check_receipt' in data2['command']:
                             if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
-                                self.check_receipt(addr)
+                                self.check_receipt(addr, data2['serial'], data2['hash'])
 
                     if 'exit' in data['payload']:
                         msg = json.dumps({'payload': {'exit': 'client exit'}})
@@ -312,7 +304,7 @@ class Repository():
         try:
             type = ""
             auction_exists = False
-            # validate bid with API
+
             for auction in self.active_auctions:
                 if str(auction.serial) == data['serial']:
                     type = auction.type
@@ -409,6 +401,14 @@ class Repository():
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
+                else:
+                    # prevents the user to place a bid on a closed auction
+                    print("> bid creation in auction {}: NOK".format(auction.serial))
+                    msg = {'payload': {'ack': 'nok', 'info': 'closed'}}
+
+                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                    msg['signature'] = signature
+                    bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
 
         except:
             print("Cannot create bid")
@@ -528,8 +528,29 @@ class Repository():
             raise
 
     # send bid info to the client for him/her to check against the receipt
-    def check_receipt(self, address_client):
+    def check_receipt(self, address_client, serial, hash):
         print("> checking the validity of the receipt")
+
+        for auction in self.closed_auctions:
+            if str(auction.serial) == serial:
+                info = auction.bid_info(hash)
+
+                if info != "":
+                    msg = {'payload': {'bid': info}}
+                else:
+                    msg = {'payload': {'ack': 'nok', 'info': 'no info about bid'}}
+
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
+            else:
+                msg = {'payload': {'ack': 'nok', 'info': 'no closed auction'}}
+
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                msg['signature'] = signature
+                bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
 
     def valid_signature(self, pubk, message, signature):
         try:

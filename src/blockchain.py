@@ -120,6 +120,19 @@ class Blockchain:
 
         return result
 
+    def bid_info(self, hash):
+        self.mylogger.log(INFO, "Getting information on the bid: {}\n".format(hash))
+
+        current_block = self.head_block
+        if current_block is not None:
+            while current_block is not None:
+                if current_block.hash == hash:
+                    return current_block.block_to_file
+                current_block = current_block.next
+
+        return ""
+
+
     # write the current blockchain to a file
     def save_to_file(self, file):
         self.mylogger.log(INFO,"\nThe Blockchain will be saved into the file: {}\n".format(file))
