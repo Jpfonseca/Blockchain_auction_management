@@ -160,10 +160,11 @@ class Repository():
                                     lines_dict = literal_eval(lines[i])
 
                                     if i == 0:
-                                        blockchain = Blockchain(lines_dict['key'], lines_dict['cert'], lines_dict['serial'], lines_dict['id'],
-                                                                lines_dict['timestamp'], lines_dict['name'], lines_dict['time-limit'],
-                                                                lines_dict['description'], lines_dict['type'], lines_dict['bidders'],
-                                                                lines_dict['limit_bids'], lines_dict['state'], lines_dict['winner'],
+                                        blockchain = Blockchain(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
+                                                                lines_dict['id'], lines_dict['timestamp'],
+                                                                lines_dict['name'], lines_dict['time-limit'],
+                                                                lines_dict['description'], lines_dict['type'],
+                                                                lines_dict['state'], lines_dict['winner'],
                                                                 lines_dict['winner_amount'])
 
                                     else:
@@ -201,28 +202,8 @@ class Repository():
                         if data['payload']['valid']:
                             if self.valid_signature(self.man_pubkey, json.dumps(data['payload']), signature):
                                 data2 = data['payload']
-                                if ('bidders' in data2['auction']) and ('limit_bids' in data2['auction']):
-                                    self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
-                                                        self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
-                                                        data2['auction']['name'], data2['auction']['time-limit'],
-                                                        data2['auction']['description'], data2['auction']['type'],
-                                                        bidders=data2['auction']['bidders'], limit_bids=data2['auction']['limit_bids'])
 
-                                elif ('bidders' in data2['auction']) and not ('limit_bids' in data2['auction']):
-                                    self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
-                                                        self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
-                                                        data2['auction']['name'], data2['auction']['time-limit'],
-                                                        data2['auction']['description'], data2['auction']['type'],
-                                                        bidders=data2['auction']['bidders'])
-
-                                elif not ('bidders' in data2['auction']) and ('limit_bids' in data2['auction']):
-                                    self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
-                                                        self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
-                                                        data2['auction']['name'], data2['auction']['time-limit'],
-                                                        data2['auction']['description'], data2['auction']['type'],
-                                                        limit_bids=data2['auction']['limit_bids'])
-                                else:
-                                    self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
+                                self.create_auction(addr, data2['auction']['key'], data2['auction']['cert'],
                                                         self.serial + 1, data2['auction']['id'], data2['auction']['timestamp'],
                                                         data2['auction']['name'], data2['auction']['time-limit'],
                                                         data2['auction']['description'], data2['auction']['type'])
@@ -274,12 +255,10 @@ class Repository():
             raise
 
     # create an auction according to the client's requested parameters
-    def create_auction(self, addr, key, cert, serial, id, timestamp, name, timelimit, description, type, bidders=None,
-                       limit_bids=None):
+    def create_auction(self, addr, key, cert, serial, id, timestamp, name, timelimit, description, type):
         try:
             self.mylogger.log(INFO, "Create auction ")
-            blockchain = Blockchain(key, cert, serial, id, timestamp, name, timelimit, description, type, bidders, limit_bids,
-                                    state='active')
+            blockchain = Blockchain(key, cert, serial, id, timestamp, name, timelimit, description, type, state='active')
             self.serial = self.serial + 1
 
             print("> auction creation: OK")

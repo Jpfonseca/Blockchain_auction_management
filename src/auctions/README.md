@@ -1,0 +1,1 @@
+# In this folder, auctions are saved in .txt files

@@ -179,8 +179,6 @@ class Client:
             time_limit = input("Time limit: ")  # format: 0h0m30s
             description = input("Description: ")
             type_auction = input("(e)nglish or (b)lind):")
-            bidders = input("Limit to bidders:")  # format: 1,2,3...
-            limit_bids = input("Limit bids of a bidder:")  # format: 1:2, 2:3
 
             date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
@@ -193,28 +191,10 @@ class Client:
             encryptedSymKey = base64.b64encode(
                 self.crypto.RSAEncryptData(self.crypto.loadPubk(self.man_pubkey), key)).decode()
 
-            if bidders and not limit_bids:
-                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction, 'bidders': bidders}}}
-            elif limit_bids and not bidders:
-                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction,
-                                               'limit_bids': limit_bids}}}
-            elif bidders and limit_bids:
-                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction, 'bidders': bidders,
-                                               'limit_bids': limit_bids}}}
-            else:
-                msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
-                                               'id': self.id, 'timestamp': date_time, 'name': name,
-                                               'time-limit': time_limit,
-                                               'description': description, 'type': type_auction}}}
+            msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
+                                           'id': self.id, 'timestamp': date_time, 'name': name,
+                                           'time-limit': time_limit,
+                                           'description': description, 'type': type_auction}}}
 
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 

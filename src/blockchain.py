@@ -41,8 +41,7 @@ class Block:
 class Blockchain:
 
     def __init__(self, key=None, cert=None, serial=None, id=None, timestamp=None, name=None, time_limit=None, description=None, type=None,
-                 bidders=None,
-                 limit_bids=None, state=None, winner=None, winner_amount=None):
+                 state=None, winner=None, winner_amount=None):
 
         self.mylogger = LoggyLogglyMcface(name=Blockchain.__name__)
         self.mylogger.log(INFO, "Entering Blockchain interface")
@@ -58,19 +57,17 @@ class Blockchain:
         self.time_limit = time_limit
         self.description = description
         self.type = type
-        self.bidders = bidders
-        self.limit_bids = limit_bids
         self.state = state
         self.winner = winner
         self.winner_amount = winner_amount
 
         self.blockchain_to_file = {'key': key, 'cert': cert, 'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
-                                'time-limit': time_limit, 'description': description, 'type': type, 'bidders': bidders,
-                                'limit_bids': limit_bids, 'state': state, 'winner': winner, 'winner_amount': winner_amount}
+                                    'time-limit': time_limit, 'description': description, 'type': type, 'state': state,
+                                    'winner': winner, 'winner_amount': winner_amount}
 
         self.blockchain_to_user = {'serial': serial, 'id': id, 'timestamp': timestamp, 'name': name,
-                                'time-limit': time_limit, 'description': description, 'type': type, 'bidders': bidders,
-                                'limit_bids': limit_bids, 'state': state, 'winner': winner, 'winner_amount': winner_amount}
+                                    'time-limit': time_limit, 'description': description, 'type': type, 'state': state,
+                                    'winner': winner, 'winner_amount': winner_amount}
 
     # get info about an auction
     def info(self):

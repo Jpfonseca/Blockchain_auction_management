@@ -1,0 +1,1 @@
+# In this folder, receipts are saved in .txt files

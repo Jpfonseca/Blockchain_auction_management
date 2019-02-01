@@ -57,8 +57,6 @@ class Manager:
         self.clients_address = {}
         # dictionary of number of bids per bidder in an auction
         self.bid_number = {}
-        # dictionary with keys and certs associated with auctioner and bidders
-        # self.certs_dic = {}
         # dictionary with serial of auction and previous amount bidded
         self.auction_amount = {}
 
@@ -274,28 +272,9 @@ class Manager:
                                 msg['signature'] = signature
                                 sent = self.sock.sendto(json.dumps(msg).encode(), addr)
 
-                    # erro aqui, key_error limit bids
-                    if 'bidders' in data['bid'] or 'limit_bids' in data['bid']:
-                        # bidders: limit number of bidders to certain identities
-                        print(auction)
-
-                        bidders = auction['bidders'].split(',')  # format: ['1','2',...]
-
-                        # limit_bids = limit number of bids performed by each identity
-                        limit_bids = auction['limit_bids'].split(',')  # format: ['1:2','2:3'...]
-
-                        # bid_number: bids performed by the current identity, in the current auction
-                        if self.bid_number[data['bid']['serial']] is None:
-                            self.bid_number[data['bid']['serial']]['id'] = 0
-                            bid_number = 0
-                        else:
-                            self.bid_number[data['bid']['serial']]['id'] += 1
-                            bid_number = self.bid_number[data['bid']['serial']][data['bid']['id']]
 
                         # validate bid with API
                         valid = True
-
-                    # Mudar o true daqui quando tiver a API
 
                     # sign the receipt
                     signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
