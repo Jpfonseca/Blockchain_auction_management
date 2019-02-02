@@ -22,10 +22,14 @@ class PortugueseCitizenCard:
     """
     This class specifies all operations that can be executed on a provided Portuguese Citizen Card connected to the
     computer, based on the slot they are occupying.
-    The class depends on the libs :
+
+    This module depends on the following libs :
         - cryptography: available @ github.com/pyca/cryptography
         - pyopenssl:available @ github.com/pyca/pyopenssl
         - PyKCS11 :available @ github.com/LudovicRousseau/PyKCS11
+
+    It was developed using this Wrapper as a base:
+        - ChatSecure: available @ github.com/luminoso/chatsecure/blob/master/M2/PKCS11_Wrapper.py
     """
 
     def __init__(self):
