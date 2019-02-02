@@ -3,6 +3,7 @@ import json
 import sys
 from socket import *
 from blockchain import *
+from validator import Valid
 from ast import literal_eval
 
 from logging import DEBUG, ERROR, INFO
@@ -59,6 +60,11 @@ class Manager:
         self.bid_number = {}
         # dictionary with serial of auction and previous amount bidded
         self.auction_amount = {}
+        # dictionary of the dynamic code associated with each auction
+        self.dynamic_code = {}
+        self.current_dynamic_code = {}
+        # used for validation of the bids
+        self.validator = Valid()
 
     # server and client exchange public keys
     def start(self):
@@ -140,6 +146,9 @@ class Manager:
                                 # auction was created in repository
                                 if data2['payload']['info'] == 'auction':
                                     print("> auction creation: OK")
+
+                                    self.dynamic_code[data2['payload']['serial']] = self.current_dynamic_code
+
                                     signature = base64.b64encode(
                                         self.certgen.signData(json.dumps(data2['payload']))).decode()
                                     self.active_auctions[-1]['serial'] = data2['payload']['serial']
@@ -182,7 +191,7 @@ class Manager:
             id = msg['payload']['auction']['id']
             self.clients_address[id] = addr
 
-            self.bid_number[msg['payload']['auction']['serial']] = None
+            self.current_dynamic_code = msg['payload']['dynamic_code']
 
             # extract auction parameters
             auction = msg['payload']['auction']
@@ -225,12 +234,8 @@ class Manager:
 
                 auction = msg['payload']['auction']
                 msg = {'payload': {'auction': auction, 'valid': valid}}
-
-                signature = self.certgen.signData(json.dumps(msg['payload']))
-                signature = base64.b64encode(signature).decode()
-
+                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
-
                 # send: auction + validation of client's certificate + signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
         except:
@@ -241,9 +246,21 @@ class Manager:
     def validate_bid(self, data, addr):
         try:
             self.mylogger.log(INFO, "Validating bid")
+
+            valid = False
+
             # check if certificate is valid
             for auction in self.active_auctions:
                 if str(auction['serial']) == str(data['bid']['serial']):
+
+                    # increment number of bids made by the client
+                    if auction['serial'] not in self.bid_number:
+                        self.bid_number[auction['serial']] = {}
+                        self.bid_number[auction['serial']][data['bid']['id']] = 1
+                    elif (auction['serial'] in self.bid_number) and not (data['bid']['id'] in self.bid_number[auction['serial']]):
+                        self.bid_number[auction['serial']][data['bid']['id']] = 1
+                    else:
+                        self.bid_number[auction['serial']][data['bid']['id']] += 1
 
                     # decrypt symmetric key msg['key'] with manager private key
                     encrypted_key = base64.b64decode(data['bid']['key'])
@@ -272,16 +289,17 @@ class Manager:
                                 msg['signature'] = signature
                                 sent = self.sock.sendto(json.dumps(msg).encode(), addr)
 
+                    id_client = data['bid']['id']
+                    serial_auction = auction['serial']
 
-                        # validate bid with API
-                        valid = True
+                    valid = self.validator.dynamic_code(id_client, self.bid_number[serial_auction][id_client],
+                                                        self.dynamic_code[str(serial_auction)])
 
                     # sign the receipt
                     signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
                     data['sig_m'] = signature
 
-                    msg = {'payload': {'valid': True, 'receipt': data}}
-
+                    msg = {'payload': {'valid': valid, 'receipt': data}}
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
                     sent = self.sock.sendto(json.dumps(msg).encode(), addr)

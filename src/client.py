@@ -2,6 +2,7 @@ import copy, hashlib, json, random, string, sys, base64, datetime
 import os
 from ast import literal_eval
 from socket import *
+from pathlib import Path
 
 from logging import DEBUG, ERROR, INFO
 
@@ -142,7 +143,7 @@ class Client:
             while (True):
                 print("\n----Menu----\n1) Create auction\n2) Place bid\n3) List active auctions\n"
                       "4) List closed auctions\n5) Display bids of an auction\n6) Display bids of a client\n"
-                      "7) Check receipt\n8) Display my information\n9) Close")
+                      "7) Check receipt\n8) Display my information\n9) Display ids of all clients\n10) Close")
 
                 option = input(">")
 
@@ -163,6 +164,8 @@ class Client:
                 elif option == '8':
                     self.display_client()
                 elif option == '9':
+                    self.display_ids()
+                elif option == '10':
                     self.exit(0)
                 else:
                     print("Not a valid option!\n")
@@ -175,10 +178,28 @@ class Client:
         try:
             self.mylogger.log(INFO, "Creating auction ")
 
-            name = input("Name: ")
-            time_limit = input("Time limit: ")  # format: 0h0m30s
-            description = input("Description: ")
+            file_exists = False
+
+            name = input("name: ")
+            time_limit = input("time limit: ")  # format: 0h0m30s
+            description = input("description: ")
             type_auction = input("(e)nglish or (b)lind):")
+            file = input("dynamic code to be uploaded:")
+
+
+            while not file_exists:
+                current_path = os.getcwd()
+                path = "{}/dynamicCode/{}".format(current_path,file)
+
+                my_file = Path(path)
+                if my_file.is_file():
+                    file_exists = True
+                    with open(path) as f:
+                        dynamic_code = f.read()
+                        break
+                else:
+                    print("Nonexistent file")
+                    file = input("dynamic code to be uploaded:")
 
             date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
@@ -194,12 +215,11 @@ class Client:
             msg = {'payload': {'auction': {'key': encryptedSymKey, 'cert': encryptedSymCert, 'serial': None,
                                            'id': self.id, 'timestamp': date_time, 'name': name,
                                            'time-limit': time_limit,
-                                           'description': description, 'type': type_auction}}}
+                                           'description': description, 'type': type_auction}, 'dynamic_code': dynamic_code}}
 
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
 
             msg['signature'] = signature
-            # size = sys.getsizeof(msg.encode())
             bytes = self.sock.sendto(json.dumps(msg).encode(), (self.host, self.port_man))
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
 
@@ -366,6 +386,8 @@ class Client:
                                         self.mylogger.log(INFO, "Bid was not created")
                                         if 'info' in data['payload']:
                                             print("info: " + data['payload']['info'])
+                                        else:
+                                            print("valid bid: " + str(data['payload']['valid']))
                             else:
                                 print("\n Bid not created, wrong result of proof-of-work")
                                 self.mylogger.log(INFO, "Bid was not created")
@@ -441,6 +463,32 @@ class Client:
         except:
             print("Cannot check the receipt")
             self.mylogger.log(INFO, "Cannot check the receipt")
+            raise
+
+    def display_ids(self):
+        try:
+            self.mylogger.log(INFO, "Listing ids of active clients")
+            msg = {'payload': {'command': 'list_ids', 'id': self.id}}
+            signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+
+            bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
+            data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
+            data = json.loads(data)
+
+            signature = base64.b64decode(data['signature'])
+            payload = json.dumps(data['payload'])
+
+            if self.valid_signature(self.repo_pubkey, payload, signature):
+                if 'ack' in data['payload']:
+                    if data['payload']['ack'] == 'nok':
+                        print("\nNo active clients at the moment")
+                    else:
+                        for id in data['payload']['ids']:
+                            print("\n" + id + "\n")
+        except:
+            print("Can't list ids of active clients")
+            self.mylogger.log(INFO, "Cannot list ids")
             raise
 
     # list active auctions
@@ -576,7 +624,7 @@ class Client:
 
             # rand: String of random characters, encoded in base-64 format
             rand = base64.b64encode(
-                ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(30)).encode())
+                ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(50)).encode())
 
             while (loop):
                 ctr += 1

@@ -236,6 +236,9 @@ class Repository():
                         elif 'check_receipt' in data2['command']:
                             if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
                                 self.check_receipt(addr, data2['serial'], data2['hash'])
+                        elif 'list_ids' in data2['command']:
+                            if self.crypto.verifySignatureCC(self.pubkey_dict[data2['id']], payload, signature):
+                                self.list_ids(addr)
 
                     if 'exit' in data['payload']:
                         msg = json.dumps({'payload': {'exit': 'client exit'}})
@@ -384,6 +387,8 @@ class Repository():
 
                             if 'info' in data2['payload']:
                                 msg = {'payload': {'ack': 'nok', 'info': data2['payload']['info']}}
+                            else:
+                                msg = {'payload': {'ack': 'nok', 'valid': data2['payload']['valid']}}
 
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
@@ -400,6 +405,24 @@ class Repository():
         except:
             print("Cannot create bid")
             self.mylogger.log(INFO, "Cannot create bid ")
+            raise
+
+    def list_ids(self, address_client):
+        try:
+            self.mylogger.log(INFO, "Listing active auctions")
+
+            if self.pubkey_dict:
+                msg = {'payload': {'ack': 'ok', 'ids': list(self.pubkey_dict.keys())}}
+                print(list(self.pubkey_dict.keys()))
+            else:
+                msg =  msg = {'payload': {'ack': 'nok'}}
+
+            signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+            msg['signature'] = signature
+            bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
+
+        except:
+            self.mylogger.log(INFO, "Cannot list ids of clients")
             raise
 
     # list active auctions

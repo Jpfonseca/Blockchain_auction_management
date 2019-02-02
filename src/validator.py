@@ -1,6 +1,5 @@
 from os import listdir
 
-
 class Valid:
     def dynamic_code(self, id_client, num_bids, uploaded_code):
         local = {'id_client': id_client, 'num_bids': num_bids, 'valid': None}
