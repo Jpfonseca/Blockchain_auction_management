@@ -159,7 +159,10 @@ class Repository():
 
                                     lines_dict = literal_eval(lines[i])
 
+                                    print("linhas do ficheiro:" + str(lines_dict))
+
                                     if i == 0:
+                                        current_serial = lines_dict['serial']
                                         blockchain = Blockchain(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
                                                                 lines_dict['id'], lines_dict['timestamp'],
                                                                 lines_dict['name'], lines_dict['time-limit'],
@@ -175,11 +178,11 @@ class Repository():
                                         blockchain.add_block(block)
 
                                 for a in range(len(self.closed_auctions)):
-                                    if auction.serial == blockchain.serial:
+                                    if auction.serial == self.closed_auctions[a].serial:
                                         self.closed_auctions[a] = blockchain
 
                                 for a in range(len(self.all_auctions)):
-                                    if auction.serial == blockchain.serial:
+                                    if auction.serial == self.all_auctions[a].serial:
                                         self.all_auctions[a] = blockchain
                             else:
                                 print("> no bids on ended auction {} -> no possible winner".format(auction.serial))
@@ -297,7 +300,7 @@ class Repository():
                     auction_exists = True
 
             if auction_exists is False:
-                msg = {'payload': {'ack': 'nok'}}
+                msg = {'payload': {'ack': 'nok', 'info': 'auction does not exist'}}
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
@@ -308,6 +311,7 @@ class Repository():
 
                 msg = {'payload': {'ack': 'ok', 'r_string': r_string, 'numZeros': '5', 'type': type,
                                    'hash_prev': self.hash_prev[data['serial']]}}
+
                 signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                 msg['signature'] = signature
                 bytes = self.sock.sendto(json.dumps(msg).encode(), address_client)
@@ -320,19 +324,27 @@ class Repository():
                 if self.crypto.verifySignatureCC(self.pubkey_dict[data2['payload']['id']],
                                                  json.dumps(data2['payload']), signature):
 
-                    print("> proof-of-work result of client: " + json.dumps(data2['payload']['digest']))
+                    if 'digest' in data2['payload']:
+                        print("> proof-of-work result of client: " + json.dumps(data2['payload']['digest']))
 
-                    hash_object = hashlib.sha256(data2['payload']['string'].encode('utf-8'))
-                    digest = hash_object.hexdigest()
+                        hash_object = hashlib.sha256(data2['payload']['string'].encode('utf-8'))
+                        digest = hash_object.hexdigest()
 
-                    if data2['payload']['digest'] == digest:
-                        msg2 = {'payload': {'ack': 'ok', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
+                        if data2['payload']['digest'] == digest:
+                            msg2 = {'payload': {'ack': 'ok', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
+                        else:
+                            msg2 = {'payload': {'ack': 'nok'}}
+
+                        signature = base64.b64encode(self.certgen.signData(json.dumps(msg2['payload']))).decode()
+                        msg2['signature'] = signature
+                        bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
                     else:
-                        msg2 = {'payload': {'ack': 'nok'}}
+                        msg2 = {'payload': {'ack': 'nok', 'info': 'busy: could not send proof-of-work'}}
 
-                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg2['payload']))).decode()
-                    msg2['signature'] = signature
-                    bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
+                        signature = base64.b64encode(self.certgen.signData(json.dumps(msg2['payload']))).decode()
+                        msg2['signature'] = signature
+                        bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
+
 
         except:
             print("Cannot send proof-of-work to client")
@@ -382,6 +394,7 @@ class Repository():
                             msg['signature'] = signature
 
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
+                            break
                         else:
                             print("> bid creation in auction {}: NOK".format(auction.serial))
 
@@ -393,10 +406,11 @@ class Repository():
                             signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                             msg['signature'] = signature
                             bytes = self.sock.sendto(json.dumps(msg).encode(), client_address)
+                            break
                 else:
                     # prevents the user to place a bid on a closed auction
                     print("> bid creation in auction {}: NOK".format(auction.serial))
-                    msg = {'payload': {'ack': 'nok', 'info': 'closed'}}
+                    msg = {'payload': {'ack': 'nok', 'info': 'non active'}}
 
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
@@ -413,7 +427,6 @@ class Repository():
 
             if self.pubkey_dict:
                 msg = {'payload': {'ack': 'ok', 'ids': list(self.pubkey_dict.keys())}}
-                print(list(self.pubkey_dict.keys()))
             else:
                 msg =  msg = {'payload': {'ack': 'nok'}}
 

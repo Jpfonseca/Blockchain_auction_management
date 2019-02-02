@@ -240,7 +240,7 @@ class Client:
                     print("The auction was NOT created. Error: {}".format(data['payload']['info']))
                     self.exit(1)
             else:
-                print("Manager Pubk not verified")
+                print("Manager pubkey not verified")
                 self.exit(1)
         except:
             print("Cannot create auction")
@@ -271,7 +271,8 @@ class Client:
 
                 if 'ack' in data['payload']:
                     if data['payload']['ack'] == 'nok':
-                        print("\nAuction requested does not exist")
+                        if 'info' in data['payload']:
+                            print(data['payload']['info'])
 
                     else:
                         # calculate proof-of-work and send the answer to the server
