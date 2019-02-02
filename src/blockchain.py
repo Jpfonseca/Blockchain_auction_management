@@ -13,12 +13,13 @@ class Block:
         self.mylogger = LoggyLogglyMcface(name=Block.__name__)
         self.mylogger.log(INFO, "Entering Block interface")
 
+        # parameters of a bid (block of the linked list - blockchain)
         self.key = key
         self.cert = cert
         self.serial = serial
         self.hash = hash
         self.hash_prev = hash_prev
-        self.amount = amount  # encrypt
+        self.amount = amount
         self.name = name
         self.id = id
         self.timestamp = timestamp
@@ -26,17 +27,23 @@ class Block:
         self.previous = None
 
         self.block_to_file = {'key': key, 'cert': cert, 'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
-                           'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
+                                'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
 
         self.block_to_user = {'serial': serial, 'hash': hash, 'hash_prev': hash_prev,
-                              'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
+                                'amount': amount, 'name': name, 'id': id, 'timestamp': timestamp}
 
-    # get info about a bid
     def info(self):
+        """
+        Get information on a block/bid (1)
+        """
         return str(self.block_to_file)
 
     def info_user(self):
+        """
+        Get information on a block/bid (2)
+        """
         return str(self.block_to_user)
+
 
 class Blockchain:
 
@@ -46,6 +53,7 @@ class Blockchain:
         self.mylogger = LoggyLogglyMcface(name=Blockchain.__name__)
         self.mylogger.log(INFO, "Entering Blockchain interface")
 
+        # parameters of a blockchain (linked list)
         self.head_block = None
         self.tail_block = None
         self.key = key
@@ -69,19 +77,26 @@ class Blockchain:
                                     'time-limit': time_limit, 'description': description, 'type': type, 'state': state,
                                     'winner': winner, 'winner_amount': winner_amount}
 
-    # get info about an auction
     def info(self):
+        """
+        Get information on a blockchain (1)
+        """
         self.mylogger.log(INFO, "The Blockchain with the serial {} current state is :\n {}".format(self.serial, str(
             self.blockchain_to_file)))
         return str(self.blockchain_to_file)
 
     def info_user(self):
+        """
+        Get information on a blockchain (1)
+        """
         self.mylogger.log(INFO, "The Blockchain with the serial {} current state is :\n {}".format(self.serial, str(
             self.blockchain_to_user)))
         return str(self.blockchain_to_user)
 
-    # return the number of blocks in the blockchain
     def chain_length(self):
+        """
+        Return the number of blocks in the blockchain
+        """
         counter = 0
         current_block = self.head_block
 
@@ -91,8 +106,10 @@ class Blockchain:
         self.mylogger.log(INFO, "The Blockchain with the serial {} has : {} blocks".format(self.serial, counter))
         return counter
 
-    # get all bids of an identity
     def bids_client(self, id):
+        """
+        Get all bids (blocks) of a client
+        """
         result = []
         current_block = self.head_block
         self.mylogger.log(INFO, "The client with the id {} has these Bids:".format(id))
@@ -104,8 +121,10 @@ class Blockchain:
 
         return result
 
-    # get all bids of an auction
     def bids_auction(self, serial):
+        """
+        Get all bids (blocks) of an auction
+        """
         result = []
         current_block = self.head_block
         self.mylogger.log(INFO, "The Blockchain with the serial {} has these Bids:".format(serial))
@@ -118,6 +137,9 @@ class Blockchain:
         return result
 
     def bid_info(self, hash):
+        """
+        Get information on a bid
+        """
         self.mylogger.log(INFO, "Getting information on the bid: {}\n".format(hash))
 
         current_block = self.head_block
@@ -129,9 +151,10 @@ class Blockchain:
 
         return ""
 
-
-    # write the current blockchain to a file
     def save_to_file(self, file):
+        """
+        Write the blockchain into a file
+        """
         self.mylogger.log(INFO,"\nThe Blockchain will be saved into the file: {}\n".format(file))
 
         current_path = os.getcwd()
@@ -148,8 +171,10 @@ class Blockchain:
         text_file.close()
         self.mylogger.log(INFO, "The Blockchain was saved into the file: {}\n".format(file))
 
-    # add block at the end of the blockchain
     def add_block(self, block):
+        """
+        Add block to the linked list (blockchain)
+        """
         self.mylogger.log(INFO,
                           "Adding block into the blockchain: \n Hash: {}, Amount: {}, Identity: {}, Timestamp: {}"
                           "".format(block.hash, block.amount, block.id, block.timestamp))
@@ -165,8 +190,10 @@ class Blockchain:
                 self.tail_block = block
         return
 
-    # remove all blocks in the blockchain
     def remove_blocks(self):
+        """
+        Remove all blocks/bids of the blockchain
+        """
         counter = self.chain_length()
         self.mylogger.log(INFO,
                           "Removing all blocks from the Blockchain: {:d} blocks inside \n".format(counter))
@@ -178,6 +205,5 @@ class Blockchain:
             counter -= 1
         if counter == 0:
             self.head_block = None
-            self.mylogger.log(INFO,
-                              "Removed all blocks from the Blockchain\n")
+            self.mylogger.log(INFO,"Removed all blocks from the Blockchain\n")
         return
