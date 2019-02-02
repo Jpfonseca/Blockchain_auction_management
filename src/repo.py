@@ -68,6 +68,9 @@ class Repository():
         self.pubkey_dict = {}
         # auction creator - cert dictionary
         self.auction_certs = {}
+        # client is waiting for message
+        self.current_client = None
+        self.client_waiting = False
 
     # server and client exchange public keys
     def start(self):
@@ -126,7 +129,7 @@ class Repository():
                     time_limit = re.findall('\d+', auction.time_limit)
                     time_limit = (int(time_limit[0]) * 3600) + (int(time_limit[1]) * 60) + int(time_limit[2])
 
-                    print("info: {} seconds have passed on auction {}".format(seconds,auction.serial))
+                    print("info: {} seconds have passed on auction {}".format(seconds, auction.serial))
 
                     # alert manager that the auction has ended. It will then calculate the winner
                     if seconds > time_limit:
@@ -159,8 +162,6 @@ class Repository():
 
                                     lines_dict = literal_eval(lines[i])
 
-                                    print("linhas do ficheiro:" + str(lines_dict))
-
                                     if i == 0:
                                         current_serial = lines_dict['serial']
                                         blockchain = Blockchain(lines_dict['key'], lines_dict['cert'], lines_dict['serial'],
@@ -184,6 +185,13 @@ class Repository():
                                 for a in range(len(self.all_auctions)):
                                     if auction.serial == self.all_auctions[a].serial:
                                         self.all_auctions[a] = blockchain
+
+                                if self.client_waiting:
+                                    msg = {'payload': {'ack': 'nok', 'info': 'busy: bid no created'}}
+                                    signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
+                                    msg['signature'] = signature
+                                    bytes = self.sock.sendto(json.dumps(msg).encode(), self.current_client)
+
                             else:
                                 print("> no bids on ended auction {} -> no possible winner".format(auction.serial))
                         else:
@@ -200,6 +208,7 @@ class Repository():
                     self.client_login(data, addr)
 
                 else:
+                    self.client_waiting = False
                     if 'auction' in data['payload']:
                         signature = base64.b64decode(data['signature'])
                         if data['payload']['valid']:
@@ -332,9 +341,10 @@ class Repository():
 
                         if data2['payload']['digest'] == digest:
                             msg2 = {'payload': {'ack': 'ok', 'type': type, 'hash_prev': self.hash_prev[data['serial']]}}
+                            self.current_client = addr
+                            self.client_waiting = True
                         else:
                             msg2 = {'payload': {'ack': 'nok'}}
-
                         signature = base64.b64encode(self.certgen.signData(json.dumps(msg2['payload']))).decode()
                         msg2['signature'] = signature
                         bytes = self.sock.sendto(json.dumps(msg2).encode(), address_client)
