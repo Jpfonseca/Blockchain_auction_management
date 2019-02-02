@@ -32,35 +32,37 @@ class Client:
         self.port_man = port_man
         self.port_repo = port_repo
 
-        # public keys
+        # public keys and certificates
         self.client_cert = None
         self.client_pubk = None
         self.man_pubkey = None
         self.repo_pubkey = None
 
-        # auction and bid symmetric key associated to serial and hash
-        self.auction_keys = {}
+        # symmetric key associated with hash of the bid in an auction
         self.bid_keys = {}
+        # my bids
+        self.bids = []
 
         # addresses of the servers
         self.repo_address = None
         self.man_address = None
+
         # socket to be used
         self.sock = socket(AF_INET, SOCK_DGRAM)
-        # active auctions
-        self.active_auctions = []
-        # portuguese citizen card instance
+
+        # portuguese citizen card and CryptoUtils instance
         self.cc = PortugueseCitizenCard()
         self.crypto = CryptoUtils()
         self.slot = -1
-        # id (and name of the client)
+
+        # id and name of the client
         self.id = None
         self.name = None
-        # my bids
-        self.bids = []
 
-    # servers and client exchange public keys
     def start(self):
+        """
+        Servers and Client exchange public keys
+        """
         try:
             # ask user which slot to use
             fullnames = self.cc.getSmartcardsNames()
@@ -77,12 +79,10 @@ class Client:
                         slot = -1
                 self.slot = slot
 
-            # close sessions for other slots
             for i in range(0, len(self.cc.sessions)):
                 if slot != i:
                     self.cc.sessions[i].closeSession()
 
-            # get cc certificate (bytes)
             cert = self.cc.PTEID_GetCertificate(self.slot)
             self.client_cert = cert
 
@@ -99,10 +99,8 @@ class Client:
             certop.getCertfromPem(cert)
             self.client_pubk = certop.getPubKey().public_bytes(
                 encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            )
+                format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
-            # send client certificate and id to repository
             msg = json.dumps({'c_pubk': self.client_pubk.decode(), 'id': self.id})
             self.mylogger.log(INFO, "Exchanging pubkey's with the Repo")
             bytes = self.sock.sendto(msg.encode(), (self.host, self.port_repo))
@@ -110,7 +108,6 @@ class Client:
             print("> repository pubkey received")
             self.mylogger.log(INFO, "Repo Pubkey received")
 
-            # send client certificate and id to manager
             self.mylogger.log(INFO, "Exchanging pubkey with the Manager")
             bytes = self.sock.sendto(msg.encode(), (self.host, self.port_man))
             data2, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
@@ -120,13 +117,9 @@ class Client:
             data1 = json.loads(data1)
             data2 = json.loads(data2)
 
-            # store repository and manager public key in global variable
-            # self.repo_pubkey = base64.b64decode(data1['repo_pubk']).decode()
-            # self.man_pubkey = base64.b64decode(data2['man_pubk']).decode()
             self.repo_pubkey = data1['repo_pubk']
             self.man_pubkey = data2['man_pubk']
 
-            # save the repository and manager address
             if 'repo_pubk' in data1:
                 self.repo_address = address
             if 'man_pubk' in data2:
@@ -140,6 +133,10 @@ class Client:
 
     # menu of the client
     def loop(self):
+        """
+        The main loop of the client. It displays the menu and calls
+        functions according to the option selected by the user
+        """
         try:
             self.mylogger.log(INFO, "Entered Client Menu ")
             while (True):
@@ -178,15 +175,18 @@ class Client:
             self.mylogger.log(INFO, "Exception on client's loop")
             raise
 
-    # send new auction parameters to manager - done
     def create_auction(self):
+        """
+        Send new auction parameters to the manager server and wait for
+        an ok or not ok answer
+        """
         try:
             self.mylogger.log(INFO, "Creating auction ")
 
             file_exists = False
 
             name = input("name: ")
-            time_limit = input("time limit: ")  # format: 0h0m30s
+            time_limit = input("time limit: ")  # format: _h_m_s
             description = input("description: ")
             type_auction = input("(e)nglish or (b)lind):")
             file = input("dynamic code to be uploaded:")
@@ -233,8 +233,6 @@ class Client:
 
             if self.valid_signature(self.man_pubkey, ack, signature):
                 if data['payload']['ack'] == 'ok':
-                    # store the symmetric key of the current auction
-                    self.auction_keys[data['payload']['serial']] = key
                     print("\nNew auction created!")
                 else:
                     print("The auction was NOT created. Error: {}".format(data['payload']['info']))
@@ -249,22 +247,25 @@ class Client:
 
     # request a bid, calculate proof-of-work, send parameters to repository
     def place_bid(self):
+        """
+        Send a bid request to the repository server, which answers with a proof-of-work.
+        The client computes the proof-of-work, sends the answer to the repository and if
+        it is accepted, he/she may send the bid parameters. The repository acknowledges
+        the bid by sending a receipt signed by the 3 entities
+        """
         try:
             self.mylogger.log(INFO, "Placing bid ")
             serial = input("Serial number of auction:")
             amount = input("Amount: ")
 
-            # request bid creation and wait for proof-of-work parameter
             msg = {'payload': {'command': 'bid_request', 'id': self.id, 'serial': serial}}
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
             msg['signature'] = signature
             bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-            # receive proof-of-work from repo server
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
 
-            # validate repo signature and send bid parameters
             signature = base64.b64decode(data['signature'])
             payload = json.dumps(data['payload'])
             if self.valid_signature(self.repo_pubkey, payload, signature):
@@ -275,7 +276,6 @@ class Client:
                             print(data['payload']['info'])
 
                     else:
-                        # calculate proof-of-work and send the answer to the server
                         string, digest = self.hash_cash(data['payload']['r_string'], int(data['payload']['numZeros']))
 
                         print("Digest: " + digest)
@@ -285,7 +285,6 @@ class Client:
                         msg['signature'] = signature
                         bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-                        # receive ack or nack of the proof-of-work
                         data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
                         data = json.loads(data)
 
@@ -295,21 +294,17 @@ class Client:
                             if data['payload']['ack'] == 'ok':
                                 print("Cryptopuzzle result accepted by the server")
 
-                                # encrypt cert with symmetric key and symmetric key with manager pubkey
                                 bid_key = Fernet.generate_key()
                                 f = Fernet(bid_key)
 
-                                # certs and symmetric keys are saved in base64 format
                                 encrypted_cert = base64.b64encode(f.encrypt(self.client_cert)).decode()
                                 encrypted_key = base64.b64encode(
                                     self.crypto.RSAEncryptData(self.crypto.loadPubk(self.man_pubkey), bid_key)).decode()
 
-                                # send bid parameters depending on auction type
                                 type = data['payload']['type']
-                                # time of creation of bid
+
                                 date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
-                                # hash of the block is the
                                 hash_str = str(encrypted_key) + str(encrypted_cert) + str(serial) + \
                                     str(data['payload']['hash_prev']) + str(amount) + str(self.name) + str(self.id) + \
                                     str(date_time)
@@ -336,10 +331,8 @@ class Client:
                                 signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
                                 msg['payload']['sig_c'] = signature
 
-                                # {'payload': {'bid': {...}, 'sig_c': signature}, 'signature': signature}
                                 bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-                                # receive ack or nack of the bid creation
                                 data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
                                 data = json.loads(data)
 
@@ -352,23 +345,19 @@ class Client:
                                         manager_valid = False
                                         client_valid = False
 
-                                        # validate received receipt and store it in a file
                                         print("\nReceipt validation:")
                                         data_v = copy.deepcopy(data['payload']['receipt'])
 
-                                        # verify repository signature
                                         signature = base64.b64decode(data_v.pop('sig_r'))
                                         if self.valid_signature(self.repo_pubkey, json.dumps(data_v), signature):
                                             repo_valid = True
                                             print("Repository's signature -> valid")
 
-                                        # verify manager signature
                                         signature = base64.b64decode(data_v.pop('sig_m'))
                                         if self.valid_signature(self.man_pubkey, json.dumps(data_v), signature):
                                             manager_valid = True
                                             print("Manager's signature -> valid")
 
-                                        # verify client signature
                                         signature = base64.b64decode(data_v.pop('sig_c'))
                                         if self.crypto.verifySignatureCC(self.client_pubk, json.dumps(data_v), signature):
                                             client_valid = True
@@ -380,7 +369,6 @@ class Client:
                                             else:
                                                 self.bid_keys[serial][str(hash)] = bid_key
 
-                                            # save receipt in a file
                                             current_path = os.getcwd()
                                             file = "auction_{}_bid_{}.txt".format(serial, hash)
                                             path = "{}/receipts/{}".format(current_path, file)
@@ -408,6 +396,9 @@ class Client:
             raise
 
     def display_bids(self):
+        """
+        Display the bids performed by the current user
+        """
         try:
             self.mylogger.log(INFO, "Displaying bids of the current client")
             for bid in self.bids:
@@ -417,10 +408,13 @@ class Client:
             self.mylogger.log(INFO, "Cannot list bids of current client")
             raise
 
-
-
-    # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
+        """
+        Verify if the information stored on the repository server is the
+        same as in the receipt previously received. The hash of the bid is
+        calculated both with the receipt information and the information received.
+        If the hash is equal, the information stored in the server is correct.
+        """
         try:
             self.mylogger.log(INFO, "Checking Receipt ")
             file_exists = False
@@ -445,7 +439,6 @@ class Client:
                     hash = input("Bid: ")
                     file = "auction_{}_bid_{}.txt".format(serial, hash)
 
-            # load the auction file and calculate the winner
             receipt_dict = literal_eval(lines[0])
 
             hash_str = receipt_dict['bid']['key'] + receipt_dict['bid']['cert'] + receipt_dict['bid']['serial'] +\
@@ -454,13 +447,11 @@ class Client:
 
             digest = hashlib.md5(hash_str.encode()).hexdigest()
 
-            # send request of bid information for comparison with receipt
             msg = {'payload': {'command': 'check_receipt', 'id': self.id, 'serial': serial, 'hash': hash}}
             signature = base64.b64encode(self.cc.sign_data(self.slot, json.dumps(msg['payload']))).decode()
             msg['signature'] = signature
             bytes = self.sock.sendto(json.dumps(msg).encode(), self.repo_address)
 
-            # get the information stored on the repository server
             data, server = self.sock.recvfrom(MAX_BUFFER_SIZE)
             data = json.loads(data)
 
@@ -496,6 +487,9 @@ class Client:
             raise
 
     def display_ids(self):
+        """
+        Display the IDs of the clients currently active in the system
+        """
         try:
             self.mylogger.log(INFO, "Listing ids of active clients")
             msg = {'payload': {'command': 'list_ids', 'id': self.id}}
@@ -521,8 +515,10 @@ class Client:
             self.mylogger.log(INFO, "Cannot list ids")
             raise
 
-    # list active auctions
     def list_active_auctions(self):
+        """
+        List the currently active auctions on the repository server
+        """
         try:
             self.mylogger.log(INFO, "Listing active auctions ")
             msg = {'payload': {'command': 'list_open', 'id': self.id}}
@@ -547,8 +543,10 @@ class Client:
             self.mylogger.log(INFO, "Cannot list active auctions")
             raise
 
-    # list closed auctions
     def list_closed_auctions(self):
+        """
+        List the closed auctions on the repository server
+        """
         try:
             self.mylogger.log(INFO, "Listing closed auctions ")
             msg = {'payload': {'command': 'list_closed', 'id': self.id}}
@@ -573,8 +571,10 @@ class Client:
             self.mylogger.log(INFO, "Cannot list closed auctions ")
             raise
 
-    # list all bids of an auction
     def bids_auction(self):
+        """
+        List all bids of an auction, given its serial number
+        """
         try:
             serial = input("Serial number of auction:")
             self.mylogger.log(INFO, "Listing bids of an auction {}".format(serial))
@@ -603,8 +603,10 @@ class Client:
             self.mylogger.log(INFO, "Cannot list bids of an auction")
             raise
 
-    # list all bids of a client
     def bids_client(self):
+        """
+        List all bids of a client, given his/her ID
+        """
         try:
             id = input("Id of the client:")
             self.mylogger.log(INFO, "Listing bids of client {}".format(id))
@@ -635,6 +637,9 @@ class Client:
             raise
 
     def display_client(self):
+        """
+        Display client's information (ID and name)
+        """
         try:
             self.mylogger.log(INFO, "Displaying client's information")
             print("Name: {}, Id: {}".format(self.name, self.id))
@@ -643,8 +648,15 @@ class Client:
             self.mylogger.log(INFO, "Cannot display client's information")
             raise
 
-    # calculate the proof-of-work result
     def hash_cash(self, r_string, numZeros):
+        """
+        Proof of work function that receives a random string from the repository
+        and a number of zeros.
+        First, a random string with 50 characters is computed. This string will then be
+        joined with the string of the repository and a counter. The function will
+        compute successive digests (SHA256) of that string and when the digest
+        starts with numZeros 0's, the result was found.
+        """
         try:
             self.mylogger.log(INFO, "Calculating proof-of-work: digest with {} zeros".format(numZeros))
             print("\n...calculating hash using hash-cash system")
@@ -652,7 +664,6 @@ class Client:
             loop = True
             ctr = 0
 
-            # rand: String of random characters, encoded in base-64 format
             rand = base64.b64encode(
                 ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(50)).encode())
 
@@ -661,12 +672,10 @@ class Client:
 
                 solution = False
 
-                # hashes require a heavier computation
                 _string = r_string + ":" + rand.decode() + ":" + str(ctr)
                 hash_object = hashlib.sha256(_string.encode('utf-8'))
                 digest = hash_object.hexdigest()
 
-                # if first three values of hash are '0'
                 for i in range(0, int(numZeros)):
                     if digest[i] == "0":
                         solution = True
@@ -683,6 +692,9 @@ class Client:
             raise
 
     def valid_signature(self, pubk, message, signature):
+        """
+        Validate an entity's signature on a message
+        """
         try:
             pubk = self.crypto.loadPubk(pubk)
             if not self.crypto.verifySignatureServers(pubk, message, signature):
@@ -693,8 +705,10 @@ class Client:
             self.mylogger.log(INFO, "Cannot validate signature")
             raise
 
-    # shutdown the socket
     def exit(self, type):
+        """
+        Shutdown the client
+        """
         try:
             self.mylogger.log(INFO, "Exiting client")
             msg = {'payload': {'exit': 'client exit', 'id': self.id}}

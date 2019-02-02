@@ -2,6 +2,12 @@ from os import listdir
 
 class Valid:
     def dynamic_code(self, id_client, num_bids, uploaded_code):
+        """
+        Function that executes the dynamic code uploaded by the auction creator
+        to the manager server.
+        Receives the ID of the client and the number of bids performed by
+        him/her on the current auction
+        """
         local = {'id_client': id_client, 'num_bids': num_bids, 'valid': None}
 
         print("Dynamic Code  Execution Starting")
