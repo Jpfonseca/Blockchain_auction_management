@@ -56,6 +56,8 @@ class Client:
         # id (and name of the client)
         self.id = None
         self.name = None
+        # my bids
+        self.bids = []
 
     # servers and client exchange public keys
     def start(self):
@@ -142,8 +144,9 @@ class Client:
             self.mylogger.log(INFO, "Entered Client Menu ")
             while (True):
                 print("\n----Menu----\n1) Create auction\n2) Place bid\n3) List active auctions\n"
-                      "4) List closed auctions\n5) Display bids of an auction\n6) Display bids of a client\n"
-                      "7) Check receipt\n8) Display my information\n9) Display ids of all clients\n10) Close")
+                      "4) List closed auctions\n5) Display my bids\n6) Display bids of an auction\n"
+                      "7) Display bids of a client\n8) Check receipt\n9) Display my information\n"
+                      "10) Display ids of all clients\n11) Close")
 
                 option = input(">")
 
@@ -156,16 +159,18 @@ class Client:
                 elif option == '4':
                     self.list_closed_auctions()
                 elif option == '5':
-                    self.bids_auction()
+                    self.display_bids()
                 elif option == '6':
-                    self.bids_client()
+                    self.bids_auction()
                 elif option == '7':
-                    self.check_receipt()
+                    self.bids_client()
                 elif option == '8':
-                    self.display_client()
+                    self.check_receipt()
                 elif option == '9':
-                    self.display_ids()
+                    self.display_client()
                 elif option == '10':
+                    self.display_ids()
+                elif option == '11':
                     self.exit(0)
                 else:
                     print("Not a valid option!\n")
@@ -185,7 +190,6 @@ class Client:
             description = input("description: ")
             type_auction = input("(e)nglish or (b)lind):")
             file = input("dynamic code to be uploaded:")
-
 
             while not file_exists:
                 current_path = os.getcwd()
@@ -311,6 +315,11 @@ class Client:
 
                                 hash = hashlib.md5(hash_str.encode()).hexdigest()
 
+                                self.bids.append(json.dumps({'serial': str(serial), 'hash': str(hash),
+                                                             'hash_prev': str(data['payload']['hash_prev']),
+                                                             'amount': str(amount), 'name': str(self.name),
+                                                             'id': str(self.id), 'timestamp': str(date_time)}))
+
                                 if type == 'e':
                                     msg = {'payload': {'bid': {'key': encrypted_key, 'cert': encrypted_cert, 'serial': serial,
                                                                'hash': hash, 'hash_prev': data['payload']['hash_prev'],
@@ -397,22 +406,45 @@ class Client:
             self.mylogger.log(INFO, "Bid was not created")
             raise
 
+    def display_bids(self):
+        try:
+            self.mylogger.log(INFO, "Displaying bids of the current client")
+            for bid in self.bids:
+                print(bid + "\n")
+        except:
+            print("Cannot list current client's bids")
+            self.mylogger.log(INFO, "Cannot list bids of current client")
+            raise
+
+
+
     # verify if the receipt corresponds to the information retrieved from the repository
     def check_receipt(self):
         try:
             self.mylogger.log(INFO, "Checking Receipt ")
-
+            file_exists = False
             serial = input("Auction:")
             hash = input("Bid: ")
 
-            # load the auction file and calculate the winner
             file = "auction_{}_bid_{}.txt".format(serial, hash)
-            current_path = os.getcwd()
-            path = "{}/receipts/{}".format(current_path, file)
 
-            with open(path) as f:
-                lines = f.readlines()
+            while not file_exists:
+                current_path = os.getcwd()
+                path = "{}/receipts/{}".format(current_path, file)
 
+                my_file = Path(path)
+                if my_file.is_file():
+                    file_exists = True
+                    with open(path) as f:
+                        lines = f.readlines()
+                        break
+                else:
+                    print("Nonexistent file")
+                    serial = input("Auction:")
+                    hash = input("Bid: ")
+                    file = "auction_{}_bid_{}.txt".format(serial, hash)
+
+            # load the auction file and calculate the winner
             receipt_dict = literal_eval(lines[0])
 
             hash_str = receipt_dict['bid']['key'] + receipt_dict['bid']['cert'] + receipt_dict['bid']['serial'] +\
@@ -441,8 +473,6 @@ class Client:
 
                     bid = data['bid']
 
-                    print(json.dumps(bid))
-
                     repo_info = bid['key'] + bid['cert'] + bid['serial'] + bid['hash_prev'] + \
                                 bid['amount'] + bid['id'] + bid['timestamp']
 
@@ -455,7 +485,6 @@ class Client:
                         print("\nThe receipt's information is identical to the information stored on the server")
                     else:
                         print("\nThe receipt's information is NOT identical to the information stored on the server")
-                        print(data['info'])
                         self.exit(0)
                 else:
                     print("info: " + data['payload']['info'])
