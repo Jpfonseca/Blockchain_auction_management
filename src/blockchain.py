@@ -115,7 +115,7 @@ class Blockchain:
         self.mylogger.log(INFO, "The client with the id {} has these Bids:".format(id))
 
         while current_block is not None:
-            if current_block.id == str(id) or current_block.id == int(id):
+            if current_block.id == str(id):
                 result.append(current_block.info_user())
             current_block = current_block.next
 

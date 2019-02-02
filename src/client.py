@@ -241,7 +241,7 @@ class Client:
                 print("Manager pubkey not verified")
                 self.exit(1)
         except:
-            print("Cannot create auction")
+            # print("Cannot create auction")
             self.mylogger.log(INFO, "Cannot create auction")
             raise
 
@@ -391,7 +391,7 @@ class Client:
                                 self.mylogger.log(INFO, "Bid was not created")
                                 self.exit(1)
         except:
-            print("Bid was not created")
+            #print("Bid was not created")
             self.mylogger.log(INFO, "Bid was not created")
             raise
 
@@ -404,7 +404,7 @@ class Client:
             for bid in self.bids:
                 print(bid + "\n")
         except:
-            print("Cannot list current client's bids")
+            #print("Cannot list current client's bids")
             self.mylogger.log(INFO, "Cannot list bids of current client")
             raise
 
@@ -482,7 +482,7 @@ class Client:
                     print("info: " + data['payload']['info'])
 
         except:
-            print("Cannot check the receipt")
+            #print("Cannot check the receipt")
             self.mylogger.log(INFO, "Cannot check the receipt")
             raise
 
@@ -539,7 +539,7 @@ class Client:
                 else:
                     print(data['payload'])
         except:
-            print("Can't list active auctions")
+            #print("Can't list active auctions")
             self.mylogger.log(INFO, "Cannot list active auctions")
             raise
 
@@ -599,7 +599,7 @@ class Client:
                     for key in data['payload'].keys():
                         print(data['payload'][key] + "\n")
         except:
-            print("Cannot list bids of an auction")
+            #print("Cannot list bids of an auction")
             self.mylogger.log(INFO, "Cannot list bids of an auction")
             raise
 
@@ -632,7 +632,7 @@ class Client:
                         print(data['payload'][key] + "\n")
 
         except:
-            print("Cannot show bids of auction")
+            #print("Cannot show bids of auction")
             self.mylogger.log(INFO, "Cannot show bids of auction")
             raise
 

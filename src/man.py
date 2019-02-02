@@ -209,20 +209,22 @@ class Manager:
             f = Fernet(key)
             encrypted_cert = base64.b64decode(msg['payload']['auction']['cert'])
             cert = f.decrypt(encrypted_cert)
-            #self.certops.getCertfromPem(cert)
-            #cert_pubk = self.certops.getPubKey()
-            #cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
+            self.certops.getCertfromPem(cert)
+            cert_pubk = self.certops.getPubKey()
+            cert_pubk = self.certops.rsaPubkToPem(cert_pubk)
 
             message = {'payload': {'ack': 'nok'}}
 
             valid = True
 
-            #if not cert_pubk == pubk.encode():
-                #message['payload']['info'] = 'diff pubk'
-                #valid = False
-            #if not self.cc.verifyChainOfTrust(cert):
-                #message['payload']['info'] = 'cc cert not verified'
-                #valid = False
+            if not cert_pubk == pubk.encode():
+                message['payload']['info'] = 'diff pubk'
+                valid = False
+            if not self.cc.verifyChainOfTrust(cert):
+                message['payload']['info'] = 'cc cert not verified'
+                valid = False
+            else:
+                print("Valid certificate")
 
             if not valid:
                 signature = base64.b64encode(self.certgen.signData(json.dumps(message['payload']))).decode()
@@ -257,14 +259,6 @@ class Manager:
             for auction in self.active_auctions:
                 if str(auction['serial']) == str(data['bid']['serial']):
 
-                    if auction['serial'] not in self.bid_number:
-                        self.bid_number[auction['serial']] = {}
-                        self.bid_number[auction['serial']][data['bid']['id']] = 1
-                    elif (auction['serial'] in self.bid_number) and not (data['bid']['id'] in self.bid_number[auction['serial']]):
-                        self.bid_number[auction['serial']][data['bid']['id']] = 1
-                    else:
-                        self.bid_number[auction['serial']][data['bid']['id']] += 1
-
                     encrypted_key = base64.b64decode(data['bid']['key'])
                     key = self.crypto.RSADecryptData(self.privateKey, encrypted_key)
 
@@ -272,33 +266,49 @@ class Manager:
                     encrypted_cert = base64.b64decode(data['bid']['cert'])
                     cert = f.decrypt(encrypted_cert)
 
-                    # if not self.cc.verifyChainOfTrust(cert):
-                    # message['payload']['info'] = 'cc cert not verified'
-                    # valid = False
+                    if not self.cc.verifyChainOfTrust(cert):
+                        print("Certificate not valid\n")
+                        valid = False
+                    else:
+                        valid = True
+                        print("Valid certificate")
 
-                    if auction['type'] == 'e':
-                        if data['bid']['serial'] not in self.auction_amount:
-                            self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+                    if not valid:
+                        msg = {'payload': {'valid': valid, 'info': 'cc cert not verified'}}
+
+                    else:
+                        if auction['type'] == 'e':
+                            if data['bid']['serial'] not in self.auction_amount:
+                                self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+                            else:
+                                previous_amount = self.auction_amount[data['bid']['serial']]
+                                self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+
+                                if int(self.auction_amount[data['bid']['serial']]) < int(previous_amount):
+                                    msg = {'payload': {'valid': False, 'info': 'amount smaller than previous'}}
+                                    signature = base64.b64encode(
+                                        self.certgen.signData(json.dumps(msg['payload']))).decode()
+                                    msg['signature'] = signature
+                                    sent = self.sock.sendto(json.dumps(msg).encode(), addr)
+
+                        id_client = data['bid']['id']
+                        serial_auction = auction['serial']
+
+                        if auction['serial'] not in self.bid_number:
+                            self.bid_number[auction['serial']] = {}
+                            self.bid_number[auction['serial']][data['bid']['id']] = 1
+                        elif (auction['serial'] in self.bid_number) and not (
+                                data['bid']['id'] in self.bid_number[auction['serial']]):
+                            self.bid_number[auction['serial']][data['bid']['id']] = 1
                         else:
-                            previous_amount = self.auction_amount[data['bid']['serial']]
-                            self.auction_amount[data['bid']['serial']] = data['bid']['amount']
+                            self.bid_number[auction['serial']][data['bid']['id']] += 1
 
-                            if int(self.auction_amount[data['bid']['serial']]) < int(previous_amount):
-                                msg = {'payload': {'valid': False, 'info': 'amount smaller than previous'}}
-                                signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
-                                msg['signature'] = signature
-                                sent = self.sock.sendto(json.dumps(msg).encode(), addr)
-
-                    id_client = data['bid']['id']
-                    serial_auction = auction['serial']
-
-                    valid = self.validator.dynamic_code(id_client, self.bid_number[serial_auction][id_client],
+                        valid = self.validator.dynamic_code(id_client, self.bid_number[serial_auction][id_client],
                                                         self.dynamic_code[str(serial_auction)])
+                        signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
+                        data['sig_m'] = signature
+                        msg = {'payload': {'valid': valid, 'receipt': data, 'info': 'non valid bid'}}
 
-                    signature = base64.b64encode(self.certgen.signData(json.dumps(data))).decode()
-                    data['sig_m'] = signature
-
-                    msg = {'payload': {'valid': valid, 'receipt': data}}
                     signature = base64.b64encode(self.certgen.signData(json.dumps(msg['payload']))).decode()
                     msg['signature'] = signature
                     sent = self.sock.sendto(json.dumps(msg).encode(), addr)
