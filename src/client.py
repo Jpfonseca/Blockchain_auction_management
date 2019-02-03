@@ -306,8 +306,8 @@ class Client:
                                 date_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
 
                                 hash_str = str(encrypted_key) + str(encrypted_cert) + str(serial) + \
-                                    str(data['payload']['hash_prev']) + str(amount) + str(self.name) + str(self.id) + \
-                                    str(date_time)
+                                           str(data['payload']['hash_prev']) + str(amount) + str(self.id) + \
+                                           str(date_time)
 
                                 hash = hashlib.md5(hash_str.encode()).hexdigest()
 
@@ -664,15 +664,12 @@ class Client:
             loop = True
             ctr = 0
 
-            rand = base64.b64encode(
-                ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(50)).encode())
-
             while (loop):
                 ctr += 1
 
                 solution = False
 
-                _string = r_string + ":" + rand.decode() + ":" + str(ctr)
+                _string = r_string + ":" + str(ctr)
                 hash_object = hashlib.sha256(_string.encode('utf-8'))
                 digest = hash_object.hexdigest()
 
