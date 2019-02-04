@@ -54,3 +54,34 @@ This folder holds the Certification Revogation Lists associated with the Authent
 
 - **dynamicCode**:
 Contains the file with the dynamic code to be uploaded by the client upon the creation of the auction.
+
+# Deploying the project
+
+The project must be executed using Python 3.
+It is advised to run the project inside a python virtual environment, which can be installed
+and activated as follows.
+The commands should be executed inside the root folder of the project:
+
+`python3 -m pip install --user virtualenv`
+
+`python3 -m  virtualenv venv`
+
+`source venv/bin/activate`
+
+The virtual environment is currently activated.  Next, run the following commands for in-
+stallation of required packages, in Ubuntu:
+
+`sudo apt-get install swig`
+
+`pip3 install -r requirements.txt`
+
+Finally,  the  project  must  be  run  in  the  following  sequence on different tabs/windows(repo.py,  then  man.py,  then
+client.py):
+
+`cd src/`
+
+- TAB 1: `python3 repo.py`
+
+- TAB 2: `python3 man.py` 
+
+- TAB 3: `python3 client.py`
