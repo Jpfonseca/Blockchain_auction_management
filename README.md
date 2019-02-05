@@ -61,8 +61,13 @@ Contains the file with the dynamic code to be uploaded by the client upon the cr
 # Deploying the project
 
 The project must be executed using Python 3.
-It is advised to run the project inside a python virtual environment, which can be installed
-and activated as follows.
+
+
+If you're running Ubuntu, you will need to install Swig:
+
+`sudo apt-get install swig`
+
+It is advised to run the project inside a python virtual environment, which can be installed and activated as follows.
 The commands should be executed inside the root folder of the project:
 
 `python3 -m pip install --user virtualenv`
@@ -71,20 +76,15 @@ The commands should be executed inside the root folder of the project:
 
 `source venv/bin/activate`
 
-The virtual environment is currently activated.  Next, run the following commands for in-
-stallation of required packages, in Ubuntu:
-
-`sudo apt-get install swig`
+The virtual environment is now currently activated.  Next, you will need to run the following command for installation of the required packages:
 
 `pip3 install -r requirements.txt`
 
-Finally,  the  project  must  be  run  in  the  following  sequence on different tabs/windows(repo.py,  then  man.py,  then
+Finally,  the  project  must  be  run  in  the  following  sequence on different terminal tabs/windows(repo.py,  then  man.py,  then
 client.py):
 
-`cd src/`
+- TAB 1: `cd src/` && `python3 repo.py`
 
-- TAB 1: `python3 repo.py`
+- TAB 2: `cd src/` && `python3 man.py`
 
-- TAB 2: `python3 man.py` 
-
-- TAB 3: `python3 client.py`
+- TAB 3: `cd src/` && `python3 client.py`
