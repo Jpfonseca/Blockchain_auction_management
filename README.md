@@ -38,6 +38,9 @@ Contains all the needed security functions, for encryption/decryption of informa
 - **validator.py**:
 The script that will execute the dynamic code uploaded by the client to the manager server, at the time of the auction creation.
 
+- **grabcrls.sh**
+The script that should be run to fetch the most recent Certificate revocation lists associated with the Citizen Card Certificates. The CRL's are updated each week(Sundays) by the Portuguese authorities.
+
 ### Folders
 
 - **auctions**:
