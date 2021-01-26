@@ -52,10 +52,14 @@ Contains the .txt files of the receipts of the bids performed by clients.
 - **certLists**:
 This folder holds the Certificate associated with the Root State Autority and the certificates for Authentication Certification chain under the it, needed to authenticate a Portuguese Citizen.
 The certificates needed are:
-    [State Certification Entity Certificates](https://www.scee.gov.pt/rep/certificados/)
-    [CC Certification Entity Certificates](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao/)
-    [CC Authentication Entity Certficate](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao_autenticacao)
-    [CC Authentication Certificates](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao_autenticacao/)
+
+   + [State Certification Entity Certificates](https://www.scee.gov.pt/rep/certificados/)
+    
+   + [CC Certification Entity Certificates](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao/)
+    
+   + [CC Authentication Entity Certficate](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao_autenticacao)
+    
+   + [CC Authentication Certificates](https://pki.cartaodecidadao.pt/publico/certificado/cc_ec_cidadao_autenticacao/)
 
 - **crlLists**:
 This folder holds the Certification Revogation Lists associated with the Authentication Certification Authority of the Portuguese Citizen Card
